@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Environment — never commit keys
+.env
+.env.*
+!.env.example
+
+# Supabase CLI
+.branches/
+.temp/
+supabase/.temp/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local database artefacts
+pgdata/
+*.dump
+*.sql.gz
