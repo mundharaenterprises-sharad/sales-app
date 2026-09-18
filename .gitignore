@@ -34,3 +34,8 @@ pnpm-debug.log*
 pgdata/
 *.dump
 *.sql.gz
+
+# App
+app/node_modules/
+app/dist/
+app/.env.local
