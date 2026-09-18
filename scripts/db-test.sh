@@ -42,4 +42,9 @@ echo "==> Concurrency tests"
 "$ROOT/supabase/tests/003_concurrency.sh"
 
 echo
+echo "==> Money tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/004_money_tests.sql" 2>&1 | strip
+
+echo
 echo "All suites passed."

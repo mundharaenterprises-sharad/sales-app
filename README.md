@@ -16,13 +16,16 @@ Specification*.
 
 | Layer | State |
 |---|---|
-| Database schema | **Done** — 13 migrations |
+| Database schema | **Done** — 15 migrations |
 | Row-level security | **Done** |
-| Business logic (RPC functions) | **Done** — purchase, order, invoice, cancellation |
-| Test suite | **Done** — 49 assertions plus a concurrency race |
-| Reporting views | Not started |
-| Sales return / receipt functions | Not started |
+| Business logic (RPC functions) | **Done** — the whole order-to-cash cycle |
+| Reporting views | **Done** — 16 views |
+| Test suite | **Done** — 72 assertions plus a concurrency race |
+| Excel import of masters | Not started |
 | PWA frontend | Not started |
+
+The back end is complete. Everything that touches stock or money is built,
+enforced in the database, and covered by tests.
 
 ---
 
@@ -113,13 +116,21 @@ migration, then runs three suites:
 | Suite | What it covers |
 |---|---|
 | `001_schema_tests.sql` | Constraints, generated columns, append-only tables, audit |
-| `002_logic_tests.sql` | The functions end to end, plus RLS as a real user |
+| `002_logic_tests.sql` | Order and invoice functions end to end, plus RLS as a real user |
 | `003_concurrency.sh` | Eight processes racing for the same stock |
+| `004_money_tests.sql` | Returns, receipts, allocation, cheques, and the reports |
 
-The concurrency suite is the one that matters most. It demands more stock than
-exists from eight simultaneous connections and asserts that exactly as many
-succeed as the stock supports, that the rest are refused with the stock error
-rather than a deadlock, and that nothing is oversold or double-reserved.
+Two suites matter more than the rest.
+
+**`003_concurrency.sh`** demands more stock than exists from eight simultaneous
+connections and asserts that exactly as many succeed as the stock supports,
+that the rest are refused with the stock error rather than a deadlock, and that
+nothing is oversold or double-reserved.
+
+**Test 14 in `004`** computes the same party balance three independent ways —
+from the balance view, straight from the documents, and as the closing running
+balance of the party ledger — and requires all three to agree to the paisa. If
+they ever diverge, the reports are lying about money.
 
 Any failure aborts the run.
 
@@ -169,9 +180,48 @@ Clients never write to document tables. Everything goes through these:
 | `create_sales_invoice(date, lines, order_id, party_id, bill_discount_amount, bill_discount_pct, remarks)` | Accounts, Admin |
 | `cancel_sales_invoice(invoice_id, reason, lines)` | Accounts, Admin |
 | `post_purchase(supplier, date, lines, other_charges, bill_no, bill_date, remarks)` | Accounts, Admin |
+| `post_sales_return(party, date, lines, reason, invoice_id, remarks)` | Accounts, Admin |
+| `cancel_sales_return(return_id, reason)` | Accounts, Admin |
+| `create_receipt(party, date, mode, amount, ref, instrument_date, bank, collected_by, remarks)` | Accounts, Admin |
+| `cancel_receipt(receipt_id, reason)` | Accounts, Admin |
+| `set_cheque_status(receipt_id, status, remarks)` | Accounts, Admin |
+| `allocate_credit(allocations, receipt_id, sales_return_id)` | Accounts, Admin |
 | `post_opening_stock()` | Admin |
 
 `cancel_sales_invoice` with `lines` omitted cancels everything still standing.
+
+**Allocation is always manual.** Creating a receipt settles nothing; someone
+chooses which invoices it pays. `allocate_credit` takes the complete picture for
+one credit — invoices left out are released, an empty array unallocates it
+entirely. Money therefore never lands on an invoice by accident.
+
+A sales return is a credit in exactly the same way a receipt is, and is
+allocated through the same call. Its `restock` flag per line decides whether
+returned goods go back into sellable stock or are written off; the customer is
+credited either way.
+
+### Reporting views
+
+`v_invoice_outstanding`, `v_ageing`, `v_ageing_by_party`, `v_ageing_by_route`,
+`v_unallocated_credit`, `v_party_balance`, `v_party_ledger`, `v_sales_register`,
+`v_product_sales`, `v_collection_report`, `v_collection_by_collector`,
+`v_pending_cheques`, `v_stock_report`, `v_pending_orders`,
+`v_purchase_register`, `v_stock_reconciliation`.
+
+All are `security_invoker`, so a rep sees exactly what RLS allows and no more.
+Whether reps see money at all is governed by `app_setting.reps_see_outstanding`,
+and the test suite proves that turning it off actually hides it.
+
+Two honest limitations:
+
+- **`v_product_sales.est_margin` uses each product's *current* purchase rate**,
+  not the cost at the time of sale, which the schema does not capture. It drifts
+  when buying prices move. Treat it as indicative until a costing method is
+  chosen.
+- **`v_collection_report.days_in_transit`** is the gap between the date a
+  customer paid and the date the receipt was entered — for rep-collected cash,
+  how long it sat with them. It only sees money that eventually arrived. Cash a
+  rep never hands over produces no receipt and appears nowhere.
 
 ### Error codes
 
