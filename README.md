@@ -141,29 +141,50 @@ the real database.**
 
 ---
 
-## Applying to Supabase
+## Deploying to Supabase
 
-Run the files in `supabase/migrations/` in filename order, in the SQL editor or
-via the Supabase CLI. Do not run anything from `supabase/local/`.
+Two files, in order, pasted into the SQL Editor:
 
-After the first run, as Admin:
+1. **`supabase/deploy/deploy_all.sql`** — every migration concatenated in
+   order. It runs as a single transaction, so if anything fails nothing is
+   applied and the database is left untouched.
+2. **`supabase/deploy/bootstrap.sql`** — schedules the reservation-release job,
+   creates the first Admin, records the business details for invoice printing,
+   and ends with a sanity check that should report `OK` on every line. **Read
+   and edit the marked values before running it.**
+
+`deploy_all.sql` is generated from `supabase/migrations/`. After changing a
+migration, regenerate it:
+
+```bash
+{ head -16 supabase/deploy/deploy_all.sql
+  for f in supabase/migrations/*.sql; do
+    printf '\n-- >>>>>>>>>>>>>>>>>>>>  %s  <<<<<<<<<<<<<<<<<<<<\n\n' "$(basename "$f")"
+    cat "$f"
+  done
+} > /tmp/d.sql && mv /tmp/d.sql supabase/deploy/deploy_all.sql
+```
+
+**Never run anything from `supabase/local/` against Supabase.** That folder
+fakes Supabase's own `auth` schema so the suite can run on plain PostgreSQL;
+applying it to a real project would shadow the genuine `auth.users`.
+
+Once masters and opening quantities are loaded, post the opening stock as
+Admin:
 
 ```sql
 select public.post_opening_stock();
 ```
 
-This posts each product's `opening_qty` as an `OPENING` ledger row. It is
+It posts each product's `opening_qty` as an `OPENING` ledger row, and is
 idempotent — running it twice does nothing the second time.
 
-Then schedule the reservation release, which is the one job that must run
-without a user present:
+### After a schema change on a live project
 
-```sql
-select cron.schedule('expire-stale-orders', '0 1 * * *',
-                     $$select public.expire_stale_orders()$$);
-```
-
-(Enable the `pg_cron` extension in the Supabase dashboard first.)
+`deploy_all.sql` is for a **new, empty** project only. Once a project holds
+real data, add a new numbered migration and run only that file. Never re-run
+`deploy_all.sql` against a live database and never edit a migration that has
+already been applied.
 
 ---
 
