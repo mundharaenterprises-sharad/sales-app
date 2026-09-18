@@ -118,6 +118,14 @@ insert into app.doc_sequence (series, prefix) values
   ('RECEIPT',              'RCT-'),
   ('INVOICE_CANCELLATION', 'CAN-');
 
+-- Belt and braces. This table is already unreachable from a client: it lives
+-- in the app schema, which PostgREST does not expose, and 012_rls.sql revokes
+-- everything on that schema from anon and authenticated. RLS with no policy
+-- denies by default, so this closes the door a third time. next_doc_no is
+-- SECURITY DEFINER owned by this table's owner, which RLS does not restrain,
+-- so numbering is unaffected.
+alter table app.doc_sequence enable row level security;
+
 -- Locks the sequence row for the duration of the caller's transaction, so two
 -- concurrent documents can never take the same number.
 create or replace function app.next_doc_no(p_series app.doc_series)
