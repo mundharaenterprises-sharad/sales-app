@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase, configError, friendlyMessage } from '../lib/supabase'
+import { supabase, configError, usingSecretKey, friendlyMessage } from '../lib/supabase'
 import { Banner, Spinner } from '../components/ui'
 
 export default function Login() {
@@ -43,8 +43,19 @@ export default function Login() {
         {configError && (
           <Banner tone="bad">
             <strong>Not configured.</strong> {configError}. Create{' '}
-            <code>app/.env.local</code> from <code>.env.example</code> and put your
-            Supabase project URL and anon key in it, then restart.
+            <code>app/.env.local</code> from <code>.env.example</code>, put your
+            Supabase project URL and publishable key in it, then stop and restart
+            the dev server — it only reads that file at startup.
+          </Banner>
+        )}
+
+        {usingSecretKey && (
+          <Banner tone="bad">
+            <strong>That is a secret key.</strong> It bypasses every security rule
+            in your database, and anything in a <code>VITE_</code> variable is
+            visible to whoever opens this site. Replace it in{' '}
+            <code>app/.env.local</code> with the <strong>publishable</strong> key
+            (<code>sb_publishable_…</code>) and rotate the secret one in Supabase.
           </Banner>
         )}
 

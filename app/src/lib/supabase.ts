@@ -1,16 +1,31 @@
 import { createClient } from '@supabase/supabase-js'
 
 const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+// Supabase issues two generations of public key. The newer publishable key
+// (sb_publishable_...) is the one to use; the older anon key is a long JWT
+// starting eyJ and is being retired at the end of 2026. Either works here, so
+// an existing setup keeps running, but the publishable one is preferred.
+const key =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+
+const looksUnset = (v: string | undefined) =>
+  !v || v.includes('your-') || v.includes('<') || v.trim() === ''
 
 // A missing key produces a blank screen and an opaque console error. Fail loudly
 // at startup instead, naming the file to create.
-export const configError: string | null =
-  !url || url.includes('your-project-ref')
-    ? 'VITE_SUPABASE_URL is not set'
-    : !key || key.includes('your-anon')
-      ? 'VITE_SUPABASE_ANON_KEY is not set'
-      : null
+export const configError: string | null = looksUnset(url)
+  ? 'VITE_SUPABASE_URL is not set'
+  : looksUnset(key)
+    ? 'VITE_SUPABASE_PUBLISHABLE_KEY is not set'
+    : null
+
+// The secret key bypasses every security rule in the database. Anything in a
+// VITE_ variable is visible to whoever opens the site, so this must never be
+// one — say so rather than letting it silently ship.
+export const usingSecretKey =
+  !!key && (key.startsWith('sb_secret_') || key.includes('service_role'))
 
 export const supabase = createClient(url ?? 'http://unset', key ?? 'unset', {
   auth: {

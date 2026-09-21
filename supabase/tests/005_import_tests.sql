@@ -437,6 +437,174 @@ begin
   end;
 end $$;
 
+-- =============================================================================
+-- Appended to 005: the skip-existing mode
+-- =============================================================================
+
+do $$
+declare r jsonb;
+begin
+  set local request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+  -- R1..R3 already exist from test 2. Re-import the same sheet plus one new row.
+  r := public.import_masters('route',
+    '[{"code":"R1","name":"Biratnagar Town"},
+      {"code":"R2","name":"Itahari"},
+      {"code":"R99","name":"Damak"}]'::jsonb, true, false);
+
+  perform pg_temp.eq((r ->> 'errors')::numeric, 2,
+                     'without skip, the two existing rows are errors');
+
+  -- Same sheet, skipping what is already there.
+  r := public.import_masters('route',
+    '[{"code":"R1","name":"Biratnagar Town"},
+      {"code":"R2","name":"Itahari"},
+      {"code":"R99","name":"Damak"}]'::jsonb, true, true);
+
+  perform pg_temp.eq((r ->> 'errors')::numeric, 0, 'with skip, no errors');
+  perform pg_temp.eq((r ->> 'skipped')::numeric, 2, 'two rows skipped');
+  perform pg_temp.eq((r ->> 'would_import')::numeric, 1, 'one row would import');
+
+  -- Skipping is never silent: the report names which rows.
+  if jsonb_array_length(r -> 'skipped_detail') <> 2 then
+    perform pg_temp.fail('skipped rows are not itemised in the report');
+  end if;
+
+  r := public.import_masters('route',
+    '[{"code":"R1","name":"Biratnagar Town"},
+      {"code":"R2","name":"Itahari"},
+      {"code":"R99","name":"Damak"}]'::jsonb, false, true);
+
+  perform pg_temp.eq((r ->> 'imported')::numeric, 1, 'only the new row imported');
+  perform pg_temp.eq(
+    (select count(*) from public.route where code = 'R99'), 1, 'new route exists');
+
+  -- The existing one was left exactly as it was, not overwritten.
+  perform pg_temp.eq(
+    case when (select name from public.route where code = 'R1')
+              = 'Biratnagar Town' then 1 else 0 end, 1,
+    'existing route untouched');
+
+  perform pg_temp.pass('skip-existing imports only the new rows, and says which it skipped');
+end $$;
+
+do $$
+declare r jsonb;
+begin
+  -- A sheet where everything is already loaded should say so, not error.
+  r := public.import_masters('route',
+    '[{"code":"R1","name":"Biratnagar Town"}]'::jsonb, false, true);
+
+  perform pg_temp.eq((r ->> 'imported')::numeric, 0, 'nothing imported');
+  perform pg_temp.eq((r ->> 'skipped')::numeric, 1, 'one skipped');
+
+  if (r ->> 'note') is null then
+    perform pg_temp.fail('an entirely-skipped sheet should explain itself');
+  end if;
+
+  perform pg_temp.pass('a fully-skipped sheet reports a reason rather than failing');
+end $$;
+
+do $$
+declare r jsonb;
+begin
+  -- Skipping must not suppress genuine problems on the rows that ARE importing.
+  r := public.import_masters('route',
+    '[{"code":"R1","name":"Already there"},
+      {"code":"R98","name":""}]'::jsonb, true, true);
+
+  perform pg_temp.eq((r ->> 'skipped')::numeric, 1, 'existing row skipped');
+  if not pg_temp.has_err(r, 3, 'name') then
+    perform pg_temp.fail('a real error on a new row was hidden by skipping');
+  end if;
+
+  perform pg_temp.pass('skipping hides nothing about the rows still being imported');
+end $$;
+
+-- =============================================================================
+-- 18. Prices entered per pack (migration 018)
+-- =============================================================================
+do $$
+declare r jsonb;
+begin
+  r := public.import_masters('product',
+    '[{"code":"PK1","name":"Box priced","group_code":"G1","base_uom":"PCS",
+       "pack_uom":"BOX","pack_size":"24","sale_price":"500","purchase_price":"432",
+       "opening_qty":"240","opening_price":"432","opening_date":"2026-04-01"},
+      {"code":"PK2","name":"Loose priced","group_code":"G1","base_uom":"KG",
+       "sale_price":"150","purchase_price":"120"}]'::jsonb, false);
+
+  perform pg_temp.eq((r ->> 'imported')::numeric, 2, 'pack-priced products imported');
+
+  -- With a pack: the pack price is kept exactly, the unit rate derived.
+  perform pg_temp.eq((select pack_sale_rate from public.product where code = 'PK1'),
+                     500, 'pack sale price kept as typed');
+  perform pg_temp.eq((select sale_rate from public.product where code = 'PK1'),
+                     20.8333, 'unit sale rate derived from the pack price');
+  perform pg_temp.eq((select purchase_rate from public.product where code = 'PK1'),
+                     18, 'unit purchase rate derived');
+  perform pg_temp.eq((select opening_rate from public.product where code = 'PK1'),
+                     18, 'opening price converted to per unit');
+
+  -- The reason for storing it: 100 boxes must bill at exactly 50,000.
+  perform pg_temp.eq(
+    (select round(100 * pack_sale_rate, 2) from public.v_stock_report
+      where product_code = 'PK1'), 50000, '100 boxes bill to the paisa');
+
+  -- Without a pack: the price is simply per base unit.
+  perform pg_temp.eq((select sale_rate from public.product where code = 'PK2'),
+                     150, 'no pack: price is per base unit');
+  if (select pack_sale_rate from public.product where code = 'PK2') is not null then
+    perform pg_temp.fail('a product without a pack must not carry a pack price');
+  end if;
+
+  perform pg_temp.pass('prices entered per box, unit rate derived, no rounding loss');
+end $$;
+
+do $$
+declare r jsonb;
+begin
+  -- Both styles on one row is refused, not guessed at.
+  r := public.import_masters('product',
+    '[{"code":"PK3","name":"Both","group_code":"G1","base_uom":"PCS",
+       "pack_uom":"BOX","pack_size":"12","sale_price":"240","sale_rate":"20"},
+      {"code":"PK4","name":"Bad","group_code":"G1","base_uom":"PCS",
+       "sale_price":"1,200"}]'::jsonb, true);
+
+  if not pg_temp.has_err(r, 2, 'sale_price') then
+    perform pg_temp.fail('sale_price and sale_rate together should be refused');
+  end if;
+  if not pg_temp.has_err(r, 3, 'sale_price') then
+    perform pg_temp.fail('"1,200" in sale_price should be reported');
+  end if;
+
+  perform pg_temp.pass('a row giving both price styles is refused with a reason');
+end $$;
+
+do $$
+begin
+  -- Changing the pack size re-derives the unit rate from the pack price.
+  update public.product set pack_size = 20 where code = 'PK1';
+  perform pg_temp.eq((select sale_rate from public.product where code = 'PK1'),
+                     25, 'unit rate follows a new pack size');
+
+  -- Editing the unit rate on its own drops the pack price, so the two can
+  -- never disagree.
+  update public.product set sale_rate = 30 where code = 'PK1';
+  if (select pack_sale_rate from public.product where code = 'PK1') is not null then
+    perform pg_temp.fail('an edited unit rate should clear the stale pack price');
+  end if;
+  perform pg_temp.eq((select pack_sale_rate from public.v_stock_report
+                       where product_code = 'PK1'), 600,
+                     'pack price falls back to rate x size');
+
+  -- The old column style still means per base unit, pack or not.
+  perform pg_temp.eq((select sale_rate from public.product where code = 'P1'), 25,
+                     'old sale_rate column unchanged in meaning');
+
+  perform pg_temp.pass('pack and unit rates stay in step after edits');
+end $$;
+
 -- -----------------------------------------------------------------------------
 
 do $$

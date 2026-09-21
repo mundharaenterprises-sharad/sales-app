@@ -39,3 +39,11 @@ pgdata/
 app/node_modules/
 app/dist/
 app/.env.local
+
+# Excel files — business data such as the customer list stays off GitHub.
+# The blank template can always be regenerated with scripts/make_template.py.
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+~$*

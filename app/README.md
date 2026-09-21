@@ -12,14 +12,21 @@ cp .env.example .env.local     # then fill in the two values
 npm run dev
 ```
 
-The two values come from Supabase: **Project Settings → Data API**, where you
-want the **Project URL** and the **anon public** key.
+Both values come from the Supabase dashboard: open the project, click
+**Connect** at the top, and it shows the URL and publishable key together. The
+full list is under **Settings → API Keys**. (There is no "Settings → API" page,
+whatever older guides say.)
 
-The anon key is meant to be public — it ships inside the browser bundle, and
-row-level security is what actually protects the data. The **service_role** key
-is the opposite: it bypasses RLS entirely and must never appear in any `VITE_`
-variable, because everything prefixed `VITE_` is visible to anyone who opens
-the site.
+Use the **publishable** key — `sb_publishable_…`. It is meant to be public: it
+ships inside the browser bundle, and row-level security is what actually
+protects the data. A **secret** key (`sb_secret_…`, or the old `service_role`)
+is the opposite — it bypasses RLS entirely and must never appear in any `VITE_`
+variable, because everything prefixed `VITE_` is visible to anyone who opens the
+site. The login screen refuses to proceed if it spots one.
+
+Older projects issue an `anon` key instead — a long string starting `eyJ`. That
+still works, but Supabase is retiring anon keys at the end of 2026, so prefer
+the publishable one. `VITE_SUPABASE_ANON_KEY` is still read as a fallback.
 
 Missing configuration shows a plain message on the login screen naming the file
 to create, rather than a blank page.

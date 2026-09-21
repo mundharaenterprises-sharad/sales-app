@@ -68,10 +68,10 @@ SHEETS = [
         ("base_uom",      True,  12, "The unit you SELL in and count stock in, e.g. PCS, KG, LTR.", "PCS"),
         ("pack_uom",      False, 12, "Only if you also buy or sell by the pack, e.g. BOX. Otherwise blank.", "BOX"),
         ("pack_size",     False, 12, "How many base units in one pack. 1 BOX = 24 PCS means 24.", 24),
-        ("sale_rate",     False, 12, "Default selling price per BASE unit. Editable on each bill.", 25),
-        ("purchase_rate", False, 14, "Your cost per BASE unit. Used for margin reports.", 20),
-        ("opening_qty",   False, 14, "Stock on hand at go-live, in BASE units.", 480),
-        ("opening_rate",  False, 14, "Cost per base unit of that opening stock.", 20),
+        ("sale_price",    False, 12, "Selling price of ONE PACK (one BOX) if you filled pack_uom; otherwise per base unit. The app works out the per-piece rate. Editable on each bill.", 600),
+        ("purchase_price", False, 14, "Your cost of ONE PACK if you filled pack_uom; otherwise per base unit. Used for margin reports.", 480),
+        ("opening_qty",   False, 14, "Stock on hand at go-live, in BASE units (pieces). 10 boxes of 24 = 240, or type =10*24.", 480),
+        ("opening_price", False, 14, "Cost of that opening stock, per PACK if you filled pack_uom, otherwise per base unit. Usually the same as purchase_price.", 480),
         ("opening_date",  False, 14, "Required if opening_qty is above zero. Type as YYYY-MM-DD.", "2026-04-01"),
     ]),
 ]
@@ -122,6 +122,13 @@ def add_instructions(wb):
          "pack_uom BOX, pack_size 24. Stock is always held in base units; the app "
          "converts when someone orders by the box.", "body"),
         ("Leave pack_uom and pack_size blank for anything sold loose.", "body"),
+        ("Prices follow the pack. If a product has a pack_uom, type sale_price, "
+         "purchase_price and opening_price for ONE PACK — a box of 24 at 500 means "
+         "sale_price 500. The app keeps 500 exactly for billing by the box and works "
+         "out the per-piece rate (20.8333) for loose sales. Without a pack, the price "
+         "is per base unit.", "body"),
+        ("Quantities do not follow the pack: opening_qty is always in base units, "
+         "because loose stock rarely fills whole boxes.", "body"),
         ("", None),
         ("Opening balances", "head"),
         ("opening_balance is what a customer owed you on the day you start using the "

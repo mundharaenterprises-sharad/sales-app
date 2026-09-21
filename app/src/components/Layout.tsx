@@ -11,7 +11,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/',      label: 'Home',   roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  { to: '/orders', label: 'Orders', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/stock', label: 'Stock',  roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  { to: '/import', label: 'Import', roles: ['ADMIN'] },
 ]
 
 export default function Layout() {

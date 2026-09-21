@@ -100,6 +100,13 @@ Every document line stores the entered `uom` (`BASE` or `PACK`), the `qty` as
 typed, and a **snapshot of `pack_size`**. `qty_base` is a generated column.
 Snapshotting means changing a product's pack size later never rewrites history.
 
+Prices can be entered per pack (migration 018). `pack_sale_rate` and
+`pack_purchase_rate` keep the pack price exactly as typed, and a trigger
+derives the per-unit `sale_rate` / `purchase_rate` from them. Billing by the
+pack uses the stored pack price, not unit rate × size: 20.8333 × 24 is
+499.9992, which would lose 8 paisa on every 100 boxes. Editing the unit rate on
+its own clears the pack price, so the two can never disagree.
+
 ---
 
 ## Running the database locally
@@ -185,6 +192,20 @@ idempotent — running it twice does nothing the second time.
 real data, add a new numbered migration and run only that file. Never re-run
 `deploy_all.sql` against a live database and never edit a migration that has
 already been applied.
+
+When a live database needs several migrations brought in together, they ship
+as one file in `supabase/deploy/patches/`, already in the right order. Order
+can matter: 016 then 017 is correct, but 016 run on its own leaves two versions
+of the import function side by side and every call becomes ambiguous.
+
+**Run `health_check.sql` after every change.** Its first line reports which
+migrations are present, found by the objects each one leaves behind rather than
+by anyone having written it down. A missing one is named, so the fix is obvious.
+Every new migration must add its own signature to that list.
+
+| Patch | Brings in | For databases deployed |
+|---|---|---|
+| `patch_2026-09-21_import.sql` | 016, 017 | before 18 Sep 2026 |
 
 ---
 

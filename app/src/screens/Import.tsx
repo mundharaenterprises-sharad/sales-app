@@ -1,0 +1,401 @@
+import { useCallback, useRef, useState } from 'react'
+import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
+import { parseWorkbook, ENTITIES } from '../lib/workbook'
+import type { ImportReport, ParsedSheet } from '../lib/workbook'
+import { Banner, ErrorBanner, Spinner } from '../components/ui'
+
+type Status = 'pending' | 'checking' | 'problems' | 'ready' | 'importing' | 'done' | 'blocked'
+
+interface SheetState {
+  sheet: ParsedSheet
+  status: Status
+  report: ImportReport | null
+  message: string | null
+  open: boolean
+}
+
+export default function Import() {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState<string | null>(null)
+  const [states, setStates] = useState<SheetState[]>([])
+  const [ignored, setIgnored] = useState<string[]>([])
+  const [skipExisting, setSkipExisting] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [finished, setFinished] = useState(false)
+  const [openingPosted, setOpeningPosted] = useState<number | null>(null)
+
+  const reset = () => {
+    setStates([])
+    setIgnored([])
+    setError(null)
+    setFinished(false)
+    setOpeningPosted(null)
+  }
+
+  const onFile = useCallback(async (file: File) => {
+    reset()
+    setFileName(file.name)
+    setBusy(true)
+    try {
+      const { sheets, ignored } = await parseWorkbook(file)
+      setIgnored(ignored)
+      setStates(
+        sheets.map((sheet) => ({
+          sheet,
+          status: 'pending' as Status,
+          report: null,
+          message: null,
+          open: false,
+        })),
+      )
+      if (sheets.length === 0) {
+        setError(
+          'No sheets in that file looked like Routes, Product Groups, Suppliers, ' +
+            'Parties or Products. Is it the master data template?',
+        )
+      }
+    } catch (e) {
+      setError(
+        `That file could not be read as a spreadsheet. ${
+          e instanceof Error ? e.message : ''
+        }`,
+      )
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  const patch = (i: number, p: Partial<SheetState>) =>
+    setStates((s) => s.map((st, j) => (j === i ? { ...st, ...p } : st)))
+
+  /**
+   * Walks the sheets in dependency order. Each one is checked, and only
+   * committed if it is clean — so Routes exist by the time Parties are checked
+   * against them. A sheet with problems stops the run there, because anything
+   * after it may depend on what did not import.
+   */
+  const run = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    setFinished(false)
+
+    const order = [...states].sort(
+      (a, b) =>
+        ENTITIES.find((e) => e.entity === a.sheet.entity)!.order -
+        ENTITIES.find((e) => e.entity === b.sheet.entity)!.order,
+    )
+
+    let stopped = false
+
+    for (const st of order) {
+      const i = states.indexOf(st)
+
+      if (st.sheet.rows.length === 0) {
+        patch(i, { status: 'done', message: 'Empty sheet — nothing to import.' })
+        continue
+      }
+
+      if (stopped) {
+        patch(i, {
+          status: 'blocked',
+          message: 'Not attempted, because an earlier sheet did not import.',
+        })
+        continue
+      }
+
+      patch(i, { status: 'checking', message: null })
+
+      // Check first.
+      const check = await supabase.rpc('import_masters', {
+        p_entity: st.sheet.entity,
+        p_rows: st.sheet.rows,
+        p_dry_run: true,
+        p_skip_existing: skipExisting,
+      })
+
+      if (check.error) {
+        patch(i, { status: 'problems', message: friendlyMessage(check.error), open: true })
+        stopped = true
+        continue
+      }
+
+      const report = check.data as ImportReport
+
+      if (report.errors > 0) {
+        patch(i, { status: 'problems', report, open: true })
+        stopped = true
+        continue
+      }
+
+      if ((report.would_import ?? 0) === 0) {
+        patch(i, {
+          status: 'done',
+          report,
+          message: report.note ?? 'Everything in this sheet is already in the database.',
+        })
+        continue
+      }
+
+      // Then commit.
+      patch(i, { status: 'importing' })
+
+      const write = await supabase.rpc('import_masters', {
+        p_entity: st.sheet.entity,
+        p_rows: st.sheet.rows,
+        p_dry_run: false,
+        p_skip_existing: skipExisting,
+      })
+
+      if (write.error) {
+        const de = asDbError(write.error)
+        patch(i, {
+          status: 'problems',
+          report: (de.details as ImportReport) ?? null,
+          message: friendlyMessage(write.error),
+          open: true,
+        })
+        stopped = true
+        continue
+      }
+
+      patch(i, { status: 'done', report: write.data as ImportReport })
+    }
+
+    setBusy(false)
+    setFinished(!stopped)
+  }, [states, skipExisting])
+
+  const postOpening = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    const { data, error } = await supabase.rpc('post_opening_stock')
+    if (error) setError(friendlyMessage(error))
+    else setOpeningPosted(data as number)
+    setBusy(false)
+  }, [])
+
+  const anyExisting = states.some((s) => (s.report?.already_exists ?? 0) > 0)
+  const totalRows = states.reduce((n, s) => n + s.sheet.rows.length, 0)
+  const canRun = states.length > 0 && totalRows > 0 && !busy
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>Import master data</h1>
+        <span className="sub">Routes, groups, suppliers, customers and products</span>
+      </div>
+
+      <ErrorBanner error={error} />
+
+      <div className="card card-pad">
+        <h2>1. Choose your workbook</h2>
+        <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
+          The file from the master data template. Sheets are matched by name, so
+          keep them called Routes, Product Groups, Suppliers, Parties and
+          Products.
+        </p>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xlsm"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void onFile(f)
+          }}
+        />
+        <button className="primary" onClick={() => fileRef.current?.click()} disabled={busy}>
+          {fileName ? 'Choose a different file' : 'Choose file'}
+        </button>
+        {fileName && (
+          <span style={{ marginLeft: 12, color: 'var(--ink-3)', fontSize: 14 }}>
+            {fileName}
+          </span>
+        )}
+      </div>
+
+      {states.length > 0 && (
+        <>
+          <div className="card card-pad">
+            <h2>2. Check the contents</h2>
+            <p className="sub" style={{ marginTop: 4 }}>
+              Each sheet is checked in full before any of it is written, and the
+              sheets are done in order — routes and groups first, because
+              customers and products point at them.
+            </p>
+
+            <label
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                marginTop: 14, cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={skipExisting}
+                onChange={(e) => setSkipExisting(e.target.checked)}
+                style={{ width: 'auto', minHeight: 0, marginTop: 3 }}
+                disabled={busy}
+              />
+              <span style={{ fontSize: 14 }}>
+                <strong>Skip rows that are already in the database.</strong>
+                <br />
+                <span style={{ color: 'var(--ink-3)' }}>
+                  Turn this on when you are re-running after fixing something. You
+                  will be told exactly which rows were skipped.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            {states.map((st, i) => (
+              <SheetCard key={st.sheet.sheetName} st={st} onToggle={() => patch(i, { open: !st.open })} />
+            ))}
+          </div>
+
+          {ignored.length > 0 && (
+            <p className="sub" style={{ marginTop: 10 }}>
+              Ignored sheet{ignored.length === 1 ? '' : 's'}: {ignored.join(', ')}
+            </p>
+          )}
+
+          <div className="card card-pad" style={{ marginTop: 12 }}>
+            <button className="primary" onClick={() => void run()} disabled={!canRun}>
+              {busy ? <Spinner /> : 'Check and import'}
+            </button>
+            {totalRows === 0 && (
+              <span style={{ marginLeft: 12, color: 'var(--ink-3)', fontSize: 14 }}>
+                Every sheet is empty.
+              </span>
+            )}
+
+            {anyExisting && !skipExisting && (
+              <Banner tone="warn">
+                Some rows are already in the database. Tick{' '}
+                <strong>Skip rows that are already in the database</strong> above
+                to import only what is new.
+              </Banner>
+            )}
+          </div>
+        </>
+      )}
+
+      {finished && (
+        <div className="card card-pad" style={{ marginTop: 12 }}>
+          <h2>3. Post opening stock</h2>
+          <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
+            Your products carry an opening quantity. This turns those into real
+            stock. It is safe to run more than once — anything already posted is
+            left alone.
+          </p>
+          {openingPosted === null ? (
+            <button onClick={() => void postOpening()} disabled={busy}>
+              {busy ? <Spinner /> : 'Post opening stock'}
+            </button>
+          ) : (
+            <Banner tone="info">
+              {openingPosted === 0
+                ? 'Nothing to post — opening stock was already in the ledger.'
+                : `Opening stock posted for ${openingPosted} product${openingPosted === 1 ? '' : 's'}.`}
+            </Banner>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+function SheetCard({ st, onToggle }: { st: SheetState; onToggle: () => void }) {
+  const { sheet, status, report, message } = st
+
+  const pill = {
+    pending:   <span className="pill flat">Not checked</span>,
+    checking:  <span className="pill flat">Checking…</span>,
+    importing: <span className="pill flat">Importing…</span>,
+    problems:  <span className="pill bad">{report ? `${report.errors} problem${report.errors === 1 ? '' : 's'}` : 'Problem'}</span>,
+    ready:     <span className="pill warn">Ready</span>,
+    done:      <span className="pill good">{report && report.imported > 0 ? `${report.imported} imported` : 'Done'}</span>,
+    blocked:   <span className="pill flat">Skipped</span>,
+  }[status]
+
+  const hasDetail = (report?.error_detail?.length ?? 0) > 0
+
+  return (
+    <div className="card">
+      <div
+        className="card-pad"
+        style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+      >
+        <div style={{ flex: '1 1 200px' }}>
+          <h3>{sheet.label}</h3>
+          <span className="sub">
+            {sheet.sheetName} · {sheet.rows.length} row
+            {sheet.rows.length === 1 ? '' : 's'}
+            {report && report.skipped > 0 && ` · ${report.skipped} skipped`}
+          </span>
+        </div>
+        {pill}
+        {hasDetail && (
+          <button className="ghost" onClick={onToggle} style={{ minHeight: 36 }}>
+            {st.open ? 'Hide' : 'Show'} problems
+          </button>
+        )}
+      </div>
+
+      {message && (
+        <div className="card-pad" style={{ paddingTop: 0 }}>
+          <span className="sub">{message}</span>
+        </div>
+      )}
+
+      {sheet.unknownColumns.length > 0 && status === 'pending' && (
+        <div className="card-pad" style={{ paddingTop: 0 }}>
+          <Banner tone="warn">
+            {sheet.unknownColumns.length === 1 ? (
+              <>
+                The column <strong>{sheet.unknownColumns[0]}</strong> will be
+                ignored. If it was meant to be imported, its header has been
+                renamed — check it against the template.
+              </>
+            ) : (
+              <>
+                These columns will be ignored:{' '}
+                <strong>{sheet.unknownColumns.join(', ')}</strong>. If any were
+                meant to be imported, their headers have been renamed — check
+                them against the template.
+              </>
+            )}
+          </Banner>
+        </div>
+      )}
+
+      {st.open && hasDetail && (
+        <div className="table-wrap" style={{ borderTop: '1px solid var(--line)' }}>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>Column</th>
+                <th>Value</th>
+                <th>Problem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report!.error_detail.map((e, k) => (
+                <tr key={k}>
+                  <td data-label="Row" className="strong">{e.row}</td>
+                  <td data-label="Column"><code>{e.field}</code></td>
+                  <td data-label="Value" className="muted">{e.value || '(blank)'}</td>
+                  <td data-label="Problem">{e.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

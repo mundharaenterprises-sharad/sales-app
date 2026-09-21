@@ -4,6 +4,9 @@ import Layout from './components/Layout'
 import Login from './screens/Login'
 import Home from './screens/Home'
 import Stock from './screens/Stock'
+import Import from './screens/Import'
+import Orders from './screens/Orders'
+import NewOrder from './screens/NewOrder'
 import { Banner, Loading } from './components/ui'
 import { supabase } from './lib/supabase'
 
@@ -56,6 +59,12 @@ function Gate() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="stock" element={<Stock />} />
+        <Route path="orders" element={<Orders />} />
+        <Route path="orders/new" element={<NewOrder />} />
+        <Route
+          path="import"
+          element={user?.role === 'ADMIN' ? <Import /> : <Navigate to="/" replace />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
