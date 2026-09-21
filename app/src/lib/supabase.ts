@@ -86,6 +86,11 @@ export function friendlyMessage(e: unknown): string {
       return message
     case 'SA005':
       return 'That record could not be found.'
+    case '23505':
+      // Unique violation. Codes are the only unique thing a person types.
+      return 'That code is already in use. Codes must be unique.'
+    case '23514':
+      return 'One of the values is not allowed. Check for negative numbers or a missing date.'
     case 'PGRST301':
     case '42501':
       return 'You do not have permission to see that.'

@@ -68,11 +68,11 @@ export default function Home() {
             </p>
           </Link>
 
-          <div className="tile">
-            <h3>Customers</h3>
+          <Link className="tile" to="/parties">
+            <h3>Parties</h3>
             <div className="stat">{fmtQty(counts.parties)}</div>
             <p>on the books</p>
-          </div>
+          </Link>
         </div>
       )}
     </>

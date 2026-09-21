@@ -62,7 +62,13 @@ select * from (values
                                             and not tgisinternal)
                              and exists (select 1 from pg_proc
                                           where proname = 'import_masters'
-                                            and prosrc like '%sale_price%'))
+                                            and prosrc like '%sale_price%')),
+  ('019', 'master editing rules',
+                                 to_regclass('public.v_party_master') is not null
+                             and to_regclass('public.v_product_master') is not null
+                             and exists (select 1 from pg_trigger
+                                          where tgname = 'party_guard'
+                                            and not tgisinternal))
 ) as m(version, what, present);
 
 insert into _health

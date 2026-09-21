@@ -52,4 +52,9 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/005_import_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Master editing tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/006_master_edit_tests.sql" 2>&1 | strip
+
+echo
 echo "All suites passed."

@@ -534,3 +534,20 @@ table.data .strong { font-weight: 600; }
   color: var(--ink-3);
 }
 .order-line-total strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+
+/* --- Master forms --------------------------------------------------------- */
+
+.hint { font-size: 12.5px; color: var(--ink-3); margin-top: 5px; }
+.form-row { display: grid; grid-template-columns: 1fr; gap: 0 12px; }
+@media (min-width: 520px) { .form-row { grid-template-columns: 1fr 1fr; } }
+.form-section {
+  font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--ink-3); margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; cursor: pointer; }
+.check input { width: 18px; height: 18px; margin-top: 2px; flex: 0 0 auto; }
+input:disabled, select:disabled, textarea:disabled { background: var(--surface-2); color: var(--ink-3); }
+table.data tr.clickable { cursor: pointer; }
+table.data tr.clickable:hover td { background: var(--surface-2); }
+table.data tr.inactive td { opacity: .6; }
+.toolbar .check { margin: 0; align-self: center; }

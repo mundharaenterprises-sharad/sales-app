@@ -21,8 +21,8 @@ Specification*.
 | Business logic (RPC functions) | **Done** — the whole order-to-cash cycle |
 | Reporting views | **Done** — 16 views |
 | Test suite | **Done** — 72 assertions plus a concurrency race |
-| Excel import of masters | Not started |
-| PWA frontend | Not started |
+| Excel import of masters | **Done** |
+| PWA frontend | In progress — orders, stock, parties, products, import |
 
 The back end is complete. Everything that touches stock or money is built,
 enforced in the database, and covered by tests.
@@ -229,6 +229,13 @@ Clients never write to document tables. Everything goes through these:
 | `set_cheque_status(receipt_id, status, remarks)` | Accounts, Admin |
 | `allocate_credit(allocations, receipt_id, sales_return_id)` | Accounts, Admin |
 | `post_opening_stock()` | Admin |
+| Direct insert / update on `party`, `product`, `route`, `product_group` | Admin (RLS) |
+
+Masters are edited directly through their tables, under RLS. Migration 019
+adds the rules: codes never change; a party's opening balance freezes at its
+first document; a product's opening stock freezes once posted. The Parties and
+Products screens read `v_party_master` / `v_product_master`, which carry an
+`opening_locked` flag so the form can show those fields as fixed.
 
 `cancel_sales_invoice` with `lines` omitted cancels everything still standing.
 
