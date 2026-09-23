@@ -198,7 +198,13 @@ export default function NewInvoice() {
             pack_size: number
             rate: number
             line_discount_pct: number | null
-            product: { code: string; name: string; base_uom: string; pack_uom: string | null }
+            product: {
+              code: string
+              name: string
+              base_uom: string
+              pack_uom: string | null
+              pack_size: number
+            }
           }[]
         }
 
@@ -222,7 +228,11 @@ export default function NewInvoice() {
               name: l.product.name,
               baseUom: l.product.base_uom,
               packUom: l.product.pack_uom,
-              packSize: Number(l.pack_size),
+              // The product's pack size, not the one stored on the line. A
+              // line billed in pieces carries a pack size of 1, and reading
+              // that would leave the unit stuck on pieces with no box to
+              // switch to.
+              packSize: Number(l.product.pack_size ?? l.pack_size),
               uom: l.uom,
               qty: String(Number(l.qty)),
               rate: String(Number(l.rate)),
@@ -267,7 +277,12 @@ export default function NewInvoice() {
           .filter((r) => Number(r.qty_pending_base) > 0)
           .map((r) => {
             const pending = Number(r.qty_pending_base)
+            // The size the order line was written with, used to convert what
+            // is pending back into packs.
             const packSize = Number(r.pack_size)
+            // What the product is packed in today, which is what the unit
+            // dropdown should offer.
+            const productPack = Number(r.product.pack_size ?? packSize)
             // Show what is left in the unit the rep ordered in, as long as it
             // still divides into whole packs. A part pack goes out as pieces.
             const asPack = r.uom === 'PACK' && pending % packSize === 0
@@ -279,7 +294,7 @@ export default function NewInvoice() {
               name: r.product.name,
               baseUom: r.product.base_uom,
               packUom: r.product.pack_uom,
-              packSize,
+              packSize: productPack,
               uom: asPack ? ('PACK' as const) : ('BASE' as const),
               qty: String(asPack ? pending / packSize : pending),
               rate: String(asPack ? Number(r.rate) : Number(r.rate) / (r.uom === 'PACK' ? packSize : 1)),
