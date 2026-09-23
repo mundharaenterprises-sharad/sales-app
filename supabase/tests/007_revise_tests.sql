@@ -181,6 +181,54 @@ begin
   perform pg_temp.pass('correcting an order-based bill restores the order');
 end $$;
 
+-- =============================================================================
+-- 5. The replaced bill is still visible, and the two are linked
+-- =============================================================================
+do $$
+declare v_party uuid; v_prod uuid; v_old uuid; v_new uuid; r jsonb;
+begin
+  select id into v_party from public.party where code = 'C1';
+  select id into v_prod  from public.product where code = 'P1';
+
+  r := public.create_sales_invoice(current_date,
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_prod, 'uom', 'BASE', 'qty', 4, 'rate', 20)),
+        null, v_party);
+  v_old := (r ->> 'invoice_id')::uuid;
+
+  r := public.revise_sales_invoice(v_old,
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_prod, 'uom', 'BASE', 'qty', 2, 'rate', 20)));
+  v_new := (r ->> 'invoice_id')::uuid;
+
+  -- The outstanding view still hides it, because nothing is owed on it.
+  if exists (select 1 from public.v_invoice_outstanding where invoice_id = v_old) then
+    perform pg_temp.fail('a cancelled bill should not appear in the outstanding view');
+  end if;
+
+  -- The list the Bills screen reads must still show it.
+  if not exists (select 1 from public.v_invoice_list where invoice_id = v_old) then
+    perform pg_temp.fail('the replaced bill vanished from the bill list');
+  end if;
+
+  perform pg_temp.eq(
+    (select 1 from public.v_invoice_list
+      where invoice_id = v_old and status = 'CANCELLED'), 1,
+    'the replaced bill shows as cancelled');
+
+  if (select replaced_by_invoice_id from public.v_invoice_list where invoice_id = v_old)
+     is distinct from v_new then
+    perform pg_temp.fail('the old bill does not point at its replacement');
+  end if;
+
+  if (select replaces_invoice_id from public.v_invoice_list where invoice_id = v_new)
+     is distinct from v_old then
+    perform pg_temp.fail('the new bill does not point at what it replaced');
+  end if;
+
+  perform pg_temp.pass('a corrected bill stays in the list, linked to its replacement');
+end $$;
+
 do $$
 begin
   raise notice '';

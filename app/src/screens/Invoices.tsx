@@ -20,6 +20,10 @@ interface InvoiceRow {
   outstanding: number
   days_outstanding: number
   status: string
+  order_no: string | null
+  replaces_doc_no: string | null
+  replaced_by_doc_no: string | null
+  replaced_by_invoice_id: string | null
 }
 
 const LABEL: Record<string, string> = {
@@ -39,11 +43,12 @@ export default function Invoices() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [showCancelled, setShowCancelled] = useState(true)
 
   const load = useCallback(async () => {
     setError(null)
     const { data, error } = await supabase
-      .from('v_invoice_outstanding')
+      .from('v_invoice_list')
       .select('*')
       .order('invoice_date', { ascending: false })
       .limit(500)
@@ -69,6 +74,7 @@ export default function Invoices() {
     if (!rows) return []
     const needle = q.trim().toLowerCase()
     return rows.filter((r) => {
+      if (!showCancelled && r.status === 'CANCELLED') return false
       if (unpaidOnly && Number(r.outstanding) <= 0) return false
       if (route && r.route_name !== route) return false
       // Dates are plain YYYY-MM-DD, so comparing them as text is comparing them
@@ -80,7 +86,7 @@ export default function Invoices() {
         .toLowerCase()
         .includes(needle)
     })
-  }, [rows, q, unpaidOnly, route, from, to])
+  }, [rows, q, unpaidOnly, route, from, to, showCancelled])
 
   const toggle = (id: string) =>
     setPicked((s) => {
@@ -90,7 +96,9 @@ export default function Invoices() {
       return next
     })
 
-  const allShownPicked = filtered.length > 0 && filtered.every((r) => picked.has(r.invoice_id))
+  const printable = filtered.filter((r) => r.status !== 'CANCELLED')
+  const allShownPicked =
+    printable.length > 0 && printable.every((r) => picked.has(r.invoice_id))
 
   const printPicked = () => {
     const ids = filtered.filter((r) => picked.has(r.invoice_id)).map((r) => r.invoice_id)
@@ -153,6 +161,9 @@ export default function Invoices() {
             <Check id="unpaid" checked={unpaidOnly} onChange={setUnpaidOnly}>
               Unpaid only
             </Check>
+            <Check id="cancelled" checked={showCancelled} onChange={setShowCancelled}>
+              Show cancelled
+            </Check>
           </div>
 
           <div className="toolbar">
@@ -172,7 +183,7 @@ export default function Invoices() {
             >
               Today
             </button>
-            {(from || to || route || q || unpaidOnly) && (
+            {(from || to || route || q || unpaidOnly || !showCancelled) && (
               <button
                 className="ghost"
                 onClick={() => {
@@ -181,6 +192,7 @@ export default function Invoices() {
                   setRoute('')
                   setQ('')
                   setUnpaidOnly(false)
+                  setShowCancelled(true)
                 }}
               >
                 Clear
@@ -210,7 +222,11 @@ export default function Invoices() {
                       onChange={(e) =>
                         setPicked(
                           e.target.checked
-                            ? new Set(filtered.map((r) => r.invoice_id))
+                            ? new Set(
+                                filtered
+                                  .filter((r) => r.status !== 'CANCELLED')
+                                  .map((r) => r.invoice_id),
+                              )
                             : new Set(),
                         )
                       }
@@ -225,7 +241,17 @@ export default function Invoices() {
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.invoice_id} className={picked.has(r.invoice_id) ? 'picked' : undefined}>
+                  <tr
+                    key={r.invoice_id}
+                    className={
+                      [
+                        picked.has(r.invoice_id) ? 'picked' : '',
+                        r.status === 'CANCELLED' ? 'inactive' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
+                  >
                     <td data-label="Print">
                       <input
                         type="checkbox"
@@ -244,6 +270,25 @@ export default function Invoices() {
                       </span>
                       {r.status !== 'ACTIVE' && (
                         <> <span className="pill bad">{LABEL[r.status] ?? r.status}</span></>
+                      )}
+                      {r.replaced_by_doc_no && (
+                        <>
+                          <br />
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            corrected to{' '}
+                            <Link to={`/invoices/${r.replaced_by_invoice_id}`}>
+                              {r.replaced_by_doc_no}
+                            </Link>
+                          </span>
+                        </>
+                      )}
+                      {r.replaces_doc_no && (
+                        <>
+                          <br />
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            corrects {r.replaces_doc_no}
+                          </span>
+                        </>
                       )}
                     </td>
                     <td data-label="Customer">

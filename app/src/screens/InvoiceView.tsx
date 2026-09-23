@@ -26,17 +26,30 @@ export default function InvoiceView() {
   const replaced = navState?.replaced
 
   const [inv, setInv] = useState<Bill | null>(null)
+  const [link, setLink] = useState<{
+    replaces_doc_no: string | null
+    replaced_by_doc_no: string | null
+    replaced_by_invoice_id: string | null
+    replaces_invoice_id: string | null
+  } | null>(null)
   const [settings, setSettings] = useState<BusinessSetting | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
-    const [i, s] = await Promise.all([
+    const [i, s, l] = await Promise.all([
       supabase.from('sales_invoice').select(BILL_SELECT).eq('id', id).single(),
       supabase
         .from('app_setting')
         .select('business_name, business_address, business_phone')
+        .single(),
+      supabase
+        .from('v_invoice_list')
+        .select(
+          'replaces_doc_no, replaces_invoice_id, replaced_by_doc_no, replaced_by_invoice_id',
+        )
+        .eq('invoice_id', id)
         .single(),
     ])
 
@@ -46,6 +59,7 @@ export default function InvoiceView() {
     }
     setInv(i.data as unknown as Bill)
     if (!s.error) setSettings(s.data as BusinessSetting)
+    if (!l.error) setLink(l.data as typeof link)
   }, [id])
 
   useEffect(() => {
@@ -123,6 +137,22 @@ export default function InvoiceView() {
           <Banner tone="bad">
             This bill is cancelled. It is kept for the record and the goods went back
             into stock.
+            {link?.replaced_by_doc_no && (
+              <>
+                {' '}It was corrected — the bill that replaced it is{' '}
+                <Link to={`/invoices/${link.replaced_by_invoice_id}`}>
+                  {link.replaced_by_doc_no}
+                </Link>
+                .
+              </>
+            )}
+          </Banner>
+        )}
+        {link?.replaces_doc_no && inv?.status !== 'CANCELLED' && (
+          <Banner tone="info">
+            This bill corrects{' '}
+            <Link to={`/invoices/${link.replaces_invoice_id}`}>{link.replaces_doc_no}</Link>,
+            which is cancelled.
           </Banner>
         )}
         {inv?.status === 'PARTIALLY_CANCELLED' && (

@@ -42,6 +42,11 @@ select * from (values
                                           where schemaname = 'public'
                                             and tablename = 'party'
                                             and policyname = 'party_read')),
+  ('021', 'full bill list',      to_regclass('public.v_invoice_list') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_invoice'
+                                            and column_name = 'replaces_invoice_id')),
   ('020', 'same-day bill correction',
                                  to_regprocedure('public.revise_sales_invoice(uuid,jsonb,numeric,numeric,text)') is not null),
   ('013', 'order and invoice functions',
