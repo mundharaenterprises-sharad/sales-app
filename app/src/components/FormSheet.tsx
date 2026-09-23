@@ -35,6 +35,9 @@ export function FormSheet({
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
+      // Leave the focus on the page itself. Otherwise it stays inside the
+      // closed dialog's container and the arrow keys scroll nothing.
+      ;(document.activeElement as HTMLElement | null)?.blur()
     }
   }, [onClose, busy])
 

@@ -93,10 +93,7 @@ export function BillSheet({
       <div className="bill-party">
         <div className="muted">Billed to</div>
         <div className="strong">{bill.party.name}</div>
-        <div>
-          {bill.party.code}
-          {bill.party.route && ` · ${bill.party.route.name}`}
-        </div>
+        {bill.party.route && <div>{bill.party.route.name}</div>}
         {(bill.party.address || bill.party.city) && (
           <div>{[bill.party.address, bill.party.city].filter(Boolean).join(', ')}</div>
         )}
@@ -110,6 +107,8 @@ export function BillSheet({
             <th>Item</th>
             <th className="num">Qty</th>
             <th className="num">Rate</th>
+            <th className="num">Value</th>
+            <th className="num">Disc</th>
             <th className="num">Amount</th>
           </tr>
         </thead>
@@ -117,30 +116,22 @@ export function BillSheet({
           {lines.map((l) => (
             <tr key={l.id}>
               <td>{l.line_no}</td>
-              <td>
-                {l.product.name}
-                <div className="muted small">
-                  {l.product.code}
-                  {l.uom === 'PACK' && l.product.pack_uom && (
-                    <> · 1 {l.product.pack_uom} = {fmtQty(l.pack_size)} {l.product.base_uom}</>
-                  )}
-                  {Number(l.qty_cancelled_base) > 0 && (
-                    <> · {fmtQty(l.qty_cancelled_base)} {l.product.base_uom} cancelled</>
-                  )}
-                </div>
-              </td>
+              <td>{l.product.name}</td>
               <td className="num">
                 {fmtQty(l.qty)} {l.uom === 'PACK' ? l.product.pack_uom : l.product.base_uom}
               </td>
+              <td className="num">{fmtMoney(l.rate)}</td>
+              <td className="num">{fmtMoney(l.gross_amount)}</td>
               <td className="num">
-                {fmtMoney(l.rate)}
-                {Number(l.line_discount_amount) > 0 && (
-                  <div className="muted small">
-                    less{' '}
-                    {l.line_discount_pct
-                      ? `${fmtQty(l.line_discount_pct)}%`
-                      : fmtMoney(l.line_discount_amount)}
-                  </div>
+                {Number(l.line_discount_amount) > 0 ? (
+                  <>
+                    {fmtMoney(l.line_discount_amount)}
+                    {l.line_discount_pct ? (
+                      <span className="muted small"> ({fmtQty(l.line_discount_pct)}%)</span>
+                    ) : null}
+                  </>
+                ) : (
+                  '—'
                 )}
               </td>
               <td className="num">{fmtMoney(l.net_amount)}</td>

@@ -9,10 +9,12 @@ import { Check, num } from '../components/FormSheet'
 /**
  * Raising a bill.
  *
- * Two ways in:
+ * Three ways in:
  *   /invoices/new?order=<id>   bill an order a rep sent — lines come prefilled
  *                              with whatever is still pending on it
  *   /invoices/new              a direct sale: pick the party, pick the products
+ *   /invoices/new?revise=<id>  correct a bill raised today — lines come from
+ *                              that bill, and saving replaces it
  *
  * Quantities and rates stay editable either way: what actually leaves the
  * godown is what gets billed. The database refuses anything above what the
@@ -121,7 +123,9 @@ function lineDiscount(l: Line): number {
 export default function NewInvoice() {
   const nav = useNavigate()
   const [params] = useSearchParams()
-  const orderId = params.get('order')
+  const reviseId = params.get('revise')
+  const [orderId, setOrderId] = useState<string | null>(params.get('order'))
+  const [replacing, setReplacing] = useState<{ doc_no: string } | null>(null)
 
   const [order, setOrder] = useState<OrderHead | null>(null)
   const [parties, setParties] = useState<PartyRow[] | null>(null)
@@ -161,6 +165,77 @@ export default function NewInvoice() {
       const plist = (p.data ?? []) as PartyRow[]
       setParties(plist)
       setStock((s.data ?? []) as StockRow[])
+
+      // Correcting a bill raised today: its own lines are the starting point.
+      if (reviseId) {
+        const inv = await supabase
+          .from('sales_invoice')
+          .select(
+            '*, lines:sales_invoice_line (*, product:product_id' +
+              ' (code, name, base_uom, pack_uom, pack_size))',
+          )
+          .eq('id', reviseId)
+          .single()
+        if (!alive) return
+        if (inv.error) {
+          setError(friendlyMessage(inv.error))
+          return
+        }
+        const row = inv.data as unknown as {
+          doc_no: string
+          party_id: string
+          order_id: string | null
+          invoice_date: string
+          remarks: string | null
+          bill_discount_amount: number
+          lines: {
+            id: string
+            line_no: number
+            order_line_id: string | null
+            product_id: string
+            uom: 'BASE' | 'PACK'
+            qty: number
+            pack_size: number
+            rate: number
+            line_discount_pct: number | null
+            product: { code: string; name: string; base_uom: string; pack_uom: string | null }
+          }[]
+        }
+
+        setReplacing({ doc_no: row.doc_no })
+        setOrderId(row.order_id)
+        setParty(plist.find((x) => x.party_id === row.party_id) ?? null)
+        setInvoiceDate(row.invoice_date)
+        setRemarks(row.remarks ?? '')
+        if (Number(row.bill_discount_amount) > 0) {
+          setDiscMode('AMOUNT')
+          setBillDisc(String(Number(row.bill_discount_amount)))
+        }
+        setLines(
+          [...row.lines]
+            .sort((a, b) => a.line_no - b.line_no)
+            .map((l) => ({
+              key: l.id,
+              orderLineId: l.order_line_id,
+              productId: l.product_id,
+              code: l.product.code,
+              name: l.product.name,
+              baseUom: l.product.base_uom,
+              packUom: l.product.pack_uom,
+              packSize: Number(l.pack_size),
+              uom: l.uom,
+              qty: String(Number(l.qty)),
+              rate: String(Number(l.rate)),
+              discPct: l.line_discount_pct ? String(Number(l.line_discount_pct)) : '',
+              // The bill being replaced still holds these quantities, so the
+              // order's pending figure is not the limit here. The database
+              // checks the real limit when the correction is saved.
+              pendingBase: null,
+              include: true,
+            })),
+        )
+        return
+      }
 
       if (!orderId) return
 
@@ -220,7 +295,8 @@ export default function NewInvoice() {
     return () => {
       alive = false
     }
-  }, [orderId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, reviseId])
 
   // ---------------------------------------------------------------------------
   // Lines
@@ -334,7 +410,7 @@ export default function NewInvoice() {
         return
       }
       const s = stockFor(l.productId)
-      if (s && baseQty(l) > Number(s.on_hand)) {
+      if (!reviseId && s && baseQty(l) > Number(s.on_hand)) {
         setError(
           `${l.name}: only ${fmtQty(s.on_hand)} ${l.baseUom} in stock. Reduce the quantity.`,
         )
@@ -356,15 +432,23 @@ export default function NewInvoice() {
       line_discount_pct: num(l.discPct, 0) || null,
     }))
 
-    const { data, error } = await supabase.rpc('create_sales_invoice', {
-      p_invoice_date: invoiceDate,
-      p_lines: payload,
-      p_order_id: orderId,
-      p_party_id: orderId ? null : party.party_id,
-      p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
-      p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
-      p_remarks: remarks.trim() || null,
-    })
+    const { data, error } = reviseId
+      ? await supabase.rpc('revise_sales_invoice', {
+          p_invoice_id: reviseId,
+          p_lines: payload,
+          p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
+          p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
+          p_remarks: remarks.trim() || null,
+        })
+      : await supabase.rpc('create_sales_invoice', {
+          p_invoice_date: invoiceDate,
+          p_lines: payload,
+          p_order_id: orderId,
+          p_party_id: orderId ? null : party.party_id,
+          p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
+          p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
+          p_remarks: remarks.trim() || null,
+        })
 
     if (error) {
       const de = asDbError(error)
@@ -377,9 +461,13 @@ export default function NewInvoice() {
       return
     }
 
-    const res = data as { invoice_id: string; doc_no: string }
-    nav(`/invoices/${res.invoice_id}`, { replace: true, state: { justCreated: res.doc_no } })
-  }, [party, active, billDisc, billDiscValue, afterLines, discMode, invoiceDate, orderId, remarks, nav, stockFor])
+    const res = data as { invoice_id: string; doc_no: string; replaced_doc_no?: string }
+    nav(`/invoices/${res.invoice_id}`, {
+      replace: true,
+      state: { justCreated: res.doc_no, replaced: res.replaced_doc_no },
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [party, active, billDisc, billDiscValue, afterLines, discMode, invoiceDate, orderId, reviseId, remarks, nav, stockFor])
 
   // ---------------------------------------------------------------------------
 
@@ -388,17 +476,39 @@ export default function NewInvoice() {
   const pickableProducts = (stock ?? []).filter(
     (s) => !orderId || lines.some((l) => l.productId === s.product_id),
   )
+  const canAddItems = !orderId
 
   return (
     <>
       <div className="page-head">
-        <h1>{order ? `Bill ${order.doc_no}` : 'New bill'}</h1>
+        <h1>
+          {replacing
+            ? `Correct bill ${replacing.doc_no}`
+            : order
+              ? `Bill ${order.doc_no}`
+              : 'New bill'}
+        </h1>
         <span className="sub">
-          {order ? 'Only what the order still has pending' : 'Direct sale — no order'}
+          {replacing
+            ? 'Saving replaces it with a corrected bill'
+            : order
+              ? 'Only what the order still has pending'
+              : 'Direct sale — no order'}
         </span>
       </div>
 
       <ErrorBanner error={error} />
+
+      {replacing && (
+        <Banner tone="warn">
+          <strong>Correcting bill {replacing.doc_no}.</strong> When you save, that
+          bill is cancelled and a new one is raised with these items — in one go,
+          so stock and the customer's balance can never be half-corrected. The
+          new bill gets the next number; the old one stays on record as
+          cancelled. Only possible today, and only while no payment has been put
+          against it.
+        </Banner>
+      )}
 
       {shortfalls && (
         <Banner tone="bad">
@@ -419,7 +529,7 @@ export default function NewInvoice() {
         <div className="form-row">
           <div className="field">
             <label htmlFor="inv-party">Customer</label>
-            {order ? (
+            {order || replacing ? (
               <input id="inv-party" type="text" value={party?.party_name ?? ''} disabled />
             ) : (
               <button type="button" className="block" onClick={() => setPicking('party')}>
@@ -440,6 +550,7 @@ export default function NewInvoice() {
               id="inv-date"
               type="date"
               value={invoiceDate}
+              disabled={!!replacing}
               onChange={(e) => setInvoiceDate(e.target.value)}
             />
           </div>
@@ -456,11 +567,11 @@ export default function NewInvoice() {
       {lines.length === 0 ? (
         <div className="card card-pad" style={{ marginTop: 12 }}>
           <p style={{ marginTop: 0, color: 'var(--ink-3)' }}>
-            {order
+            {order && !replacing
               ? 'This order has nothing left to bill.'
               : 'No items yet. Add what the customer is taking.'}
           </p>
-          {!order && (
+          {canAddItems && (
             <button className="primary" onClick={() => setPicking('product')} disabled={!party}>
               Add item
             </button>
@@ -563,7 +674,7 @@ export default function NewInvoice() {
             )
           })}
 
-          {!order && (
+          {canAddItems && (
             <button onClick={() => setPicking('product')} disabled={!party}>
               Add another item
             </button>
@@ -645,7 +756,7 @@ export default function NewInvoice() {
               onClick={() => void save()}
               disabled={busy || active.length === 0 || !party}
             >
-              {busy ? <Spinner /> : 'Save bill'}
+              {busy ? <Spinner /> : replacing ? 'Save correction' : 'Save bill'}
             </button>
           </div>
         </div>

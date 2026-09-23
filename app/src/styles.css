@@ -234,7 +234,10 @@ button.block { width: 100%; }
 
 /* --- Tables that become cards on a phone ---------------------------------- */
 
-.table-wrap { overflow-x: auto; }
+/* A scrollable wrapper steals the arrow keys from the page, and on a wide
+   screen it has nothing to scroll anyway. Only narrow screens get one. */
+.table-wrap { overflow-x: visible; }
+@media (max-width: 1100px) { .table-wrap { overflow-x: auto; } }
 
 table.data {
   width: 100%;
@@ -559,48 +562,50 @@ table.data tr.inactive td { opacity: .6; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: 14px;
   max-width: 148mm;          /* A5 width, so the screen shows the real wrap */
   margin: 0 auto;
-  font-size: 13px;
+  /* Small on purpose: a bill of twenty items has to stay on one A5 sheet. */
+  font-size: 10.5px;
+  line-height: 1.35;
   color: var(--ink);
 }
 
 .bill-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; }
-.bill-business { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.bill-business { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
 .bill-meta { text-align: right; }
-.bill-title { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+.bill-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
 
 .bill-party {
-  margin: 14px 0 10px;
-  padding: 10px 0;
+  margin: 8px 0 6px;
+  padding: 6px 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-.bill-party .muted { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.bill-party .muted { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
 
 table.bill-lines { width: 100%; border-collapse: collapse; }
 table.bill-lines th {
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--ink-3); padding: 6px 4px; border-bottom: 1px solid var(--line-2);
+  text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--ink-3); padding: 4px 3px; border-bottom: 1px solid var(--line-2);
 }
-table.bill-lines td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.bill-lines td { padding: 3px 3px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.bill-lines .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.bill-lines .muted { color: var(--ink-3); }
-table.bill-lines .small { font-size: 11px; }
+table.bill-lines .small { font-size: 9px; }
 
-.bill-totals { margin-top: 10px; margin-left: auto; width: 62%; }
+.bill-totals { margin-top: 8px; margin-left: auto; width: 55%; }
 .bill-totals > div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
 .bill-totals span:last-child { font-variant-numeric: tabular-nums; }
 .bill-totals .grand {
   border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 6px;
-  font-weight: 700; font-size: 15px;
+  font-weight: 700; font-size: 12.5px;
 }
 
-.bill-remarks { margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.bill-remarks { margin-top: 8px; font-size: 10px; color: var(--ink-2); }
 .bill-foot {
-  margin-top: 22px; display: flex; justify-content: space-between; align-items: flex-end;
-  gap: 16px; font-size: 11px; color: var(--ink-3);
+  margin-top: 16px; display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 16px; font-size: 9px; color: var(--ink-3);
 }
 .bill-foot .sign { border-top: 1px solid var(--line-2); padding-top: 4px; min-width: 45mm; text-align: center; }
 

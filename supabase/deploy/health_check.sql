@@ -42,6 +42,8 @@ select * from (values
                                           where schemaname = 'public'
                                             and tablename = 'party'
                                             and policyname = 'party_read')),
+  ('020', 'same-day bill correction',
+                                 to_regprocedure('public.revise_sales_invoice(uuid,jsonb,numeric,numeric,text)') is not null),
   ('013', 'order and invoice functions',
                                  to_regprocedure('public.create_sales_order(uuid,date,jsonb,text)') is not null),
   ('014', 'return and receipt functions',

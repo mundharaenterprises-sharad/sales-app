@@ -19,7 +19,11 @@ export default function InvoiceView() {
   const { id } = useParams()
   const nav = useNavigate()
   const { can } = useSession()
-  const justCreated = (useLocation().state as { justCreated?: string } | null)?.justCreated
+  const navState = useLocation().state as
+    | { justCreated?: string; replaced?: string }
+    | null
+  const justCreated = navState?.justCreated
+  const replaced = navState?.replaced
 
   const [inv, setInv] = useState<Bill | null>(null)
   const [settings, setSettings] = useState<BusinessSetting | null>(null)
@@ -72,6 +76,13 @@ export default function InvoiceView() {
     else await load()
   }, [inv, load])
 
+  // A mistake can be corrected on the day the bill was raised, and only while
+  // no payment has been put against it. The database has the final say; this
+  // just decides whether to offer the button.
+  const today = new Date().toISOString().slice(0, 10)
+  const canCorrect =
+    inv != null && inv.status === 'ACTIVE' && inv.invoice_date === today
+
   if (!inv && !error) return <Loading what="Loading bill" />
 
   return (
@@ -83,6 +94,11 @@ export default function InvoiceView() {
           <button className="primary" onClick={() => window.print()} disabled={!inv}>
             Print
           </button>
+          {can('ACCOUNTS', 'ADMIN') && canCorrect && (
+            <button onClick={() => nav(`/invoices/new?revise=${inv!.id}`)} disabled={busy}>
+              Correct bill
+            </button>
+          )}
           {can('ACCOUNTS', 'ADMIN') && inv?.status !== 'CANCELLED' && (
             <button onClick={() => void cancel()} disabled={busy}>
               {busy ? <Spinner /> : 'Cancel bill'}
@@ -97,6 +113,10 @@ export default function InvoiceView() {
           <Banner tone="info">
             Bill <strong>{justCreated}</strong> saved. The goods have left stock and
             the customer now owes it.
+            {replaced && (
+              <> It replaces <strong>{replaced}</strong>, which is now cancelled.</>
+            )}
+            {canCorrect && ' Typed something wrongly? Use Correct bill — today only.'}
           </Banner>
         )}
         {inv?.status === 'CANCELLED' && (

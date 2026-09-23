@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { parseWorkbook, ENTITIES } from '../lib/workbook'
 import type { ImportReport, ParsedSheet } from '../lib/workbook'
@@ -24,6 +24,23 @@ export default function Import() {
   const [error, setError] = useState<string | null>(null)
   const [finished, setFinished] = useState(false)
   const [openingPosted, setOpeningPosted] = useState<number | null>(null)
+  // Products carrying an opening quantity that has not reached the ledger yet.
+  // Counted on its own, because opening stock is just as often typed into the
+  // product form as imported from a workbook.
+  const [waiting, setWaiting] = useState<number | null>(null)
+
+  const countWaiting = useCallback(async () => {
+    const { count, error } = await supabase
+      .from('v_product_master')
+      .select('id', { count: 'exact', head: true })
+      .gt('opening_qty', 0)
+      .eq('opening_locked', false)
+    if (!error) setWaiting(count ?? 0)
+  }, [])
+
+  useEffect(() => {
+    void countWaiting()
+  }, [countWaiting])
 
   const reset = () => {
     setStates([])
@@ -173,7 +190,8 @@ export default function Import() {
     if (error) setError(friendlyMessage(error))
     else setOpeningPosted(data as number)
     setBusy(false)
-  }, [])
+    await countWaiting()
+  }, [countWaiting])
 
   const anyExisting = states.some((s) => (s.report?.already_exists ?? 0) > 0)
   const totalRows = states.reduce((n, s) => n + s.sheet.rows.length, 0)
@@ -283,27 +301,41 @@ export default function Import() {
         </>
       )}
 
-      {finished && (
-        <div className="card card-pad" style={{ marginTop: 12 }}>
-          <h2>3. Post opening stock</h2>
-          <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
-            Your products carry an opening quantity. This turns those into real
-            stock. It is safe to run more than once — anything already posted is
-            left alone.
+      <div className="card card-pad" style={{ marginTop: 12 }}>
+        <h2>{finished ? '3. Post opening stock' : 'Post opening stock'}</h2>
+        <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
+          Opening quantities — whether imported from the workbook or typed into
+          a product — only become real stock once they are posted. This does
+          that. It is safe to run more than once: anything already posted is
+          left alone.
+        </p>
+
+        {waiting !== null && waiting > 0 && (
+          <Banner tone="warn">
+            {waiting} product{waiting === 1 ? '' : 's'} carry an opening quantity
+            that is <strong>not in stock yet</strong>.
+          </Banner>
+        )}
+
+        {openingPosted === null ? (
+          <button className="primary" onClick={() => void postOpening()} disabled={busy}>
+            {busy ? <Spinner /> : 'Post opening stock'}
+          </button>
+        ) : (
+          <Banner tone="info">
+            {openingPosted === 0
+              ? 'Nothing to post — opening stock was already in the ledger.'
+              : `Opening stock posted for ${openingPosted} product${openingPosted === 1 ? '' : 's'}. Check the Stock screen.`}
+          </Banner>
+        )}
+
+        {waiting === 0 && openingPosted === null && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            Nothing is waiting. Every product with an opening quantity has been
+            posted already.
           </p>
-          {openingPosted === null ? (
-            <button onClick={() => void postOpening()} disabled={busy}>
-              {busy ? <Spinner /> : 'Post opening stock'}
-            </button>
-          ) : (
-            <Banner tone="info">
-              {openingPosted === 0
-                ? 'Nothing to post — opening stock was already in the ledger.'
-                : `Opening stock posted for ${openingPosted} product${openingPosted === 1 ? '' : 's'}.`}
-            </Banner>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </>
   )
 }

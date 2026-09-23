@@ -18,6 +18,7 @@ interface StockRow {
   available: number
   available_packs: number | null
   sale_rate: number
+  pack_sale_rate: number | null
   is_active: boolean
 }
 
@@ -218,7 +219,20 @@ export default function Stock() {
                           </>
                         )}
                       </td>
-                      <td data-label="Rate" className="num">{fmtMoney(r.sale_rate)}</td>
+                      <td data-label="Rate" className="num">
+                        <span>
+                          {r.pack_uom && r.pack_sale_rate != null && (
+                            <>
+                              {fmtMoney(r.pack_sale_rate)} / {r.pack_uom}
+                              <br />
+                            </>
+                          )}
+                          <span className={r.pack_uom ? 'muted' : undefined}
+                                style={r.pack_uom ? { fontSize: 12 } : undefined}>
+                            {fmtMoney(r.sale_rate)} / {r.base_uom}
+                          </span>
+                        </span>
+                      </td>
                     </tr>
                   )
                 })}
