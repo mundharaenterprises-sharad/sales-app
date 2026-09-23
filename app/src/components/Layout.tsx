@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useSession, useOnline } from '../lib/session'
 import { Banner } from './ui'
 import type { Role } from '../lib/supabase'
@@ -20,9 +21,72 @@ const NAV: NavItem[] = [
   { to: '/import', label: 'Import', roles: ['ADMIN'] },
 ]
 
+/** Keys that should always move the page, wherever the focus happens to be. */
+const SCROLL_KEYS = ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End']
+
 export default function Layout() {
   const { user, signOut } = useSession()
   const online = useOnline()
+  const location = useLocation()
+
+  /**
+   * Arrow keys scroll the page.
+   *
+   * The browser sends them to whatever scrollable box the focus sits in. Click
+   * a tab and that box is the tab bar, which scrolls sideways and has nothing
+   * to scroll down — so the page sat still and the keys appeared dead. Rather
+   * than chase every such container, the page takes these keys itself, unless
+   * something is being typed into or a dialog is open, where they mean
+   * something else.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if (!SCROLL_KEYS.includes(e.key)) return
+
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName
+      if (t?.isContentEditable || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'OPTION') {
+        return
+      }
+      // A one-line text box has no use for up and down: the browser only
+      // offers its own suggestion list, which is not what anyone wants while
+      // reading a list of parties. Leave the keys alone where they do mean
+      // something — a date steps a day, a number box steps a value.
+      if (tag === 'INPUT') {
+        const type = (t as HTMLInputElement).type
+        const passThrough = ['date', 'datetime-local', 'month', 'week', 'time', 'number', 'range']
+        if (passThrough.includes(type)) return
+      }
+      // A dialog does its own scrolling.
+      if (document.querySelector('.sheet-backdrop')) return
+
+      const page = Math.max(window.innerHeight - 80, 200)
+      const by =
+        e.key === 'ArrowDown' ? 72
+        : e.key === 'ArrowUp' ? -72
+        : e.key === 'PageDown' ? page
+        : e.key === 'PageUp' ? -page
+        : 0
+
+      e.preventDefault()
+      if (e.key === 'Home') window.scrollTo({ top: 0 })
+      else if (e.key === 'End') window.scrollTo({ top: document.body.scrollHeight })
+      else window.scrollBy({ top: by })
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  /**
+   * Moving to another screen starts at the top, with the page scrollable.
+   * A dialog left mid-navigation could otherwise leave the body locked.
+   */
+  useEffect(() => {
+    document.body.style.overflow = ''
+    window.scrollTo({ top: 0 })
+  }, [location.pathname])
 
   const items = NAV.filter((i) => user && i.roles.includes(user.role))
 

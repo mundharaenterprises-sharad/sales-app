@@ -127,6 +127,7 @@ a { color: var(--navy-700); }
   padding: 0 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  overscroll-behavior: contain;
   position: sticky;
   top: calc(56px + env(safe-area-inset-top));
   z-index: 29;
@@ -643,3 +644,7 @@ table.data th input[type='checkbox'] { width: 18px; height: 18px; }
 }
 
 .strong.bad { color: var(--bad); }
+
+/* The row the keyboard is sitting on. */
+table.data tr.active-row td { background: var(--navy-100); box-shadow: inset 3px 0 0 var(--navy-700); }
+.sheet-row.active-row { background: var(--navy-100); box-shadow: inset 3px 0 0 var(--navy-700); }

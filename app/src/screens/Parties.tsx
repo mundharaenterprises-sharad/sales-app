@@ -6,6 +6,7 @@ import { fmtAge, fmtDate, fmtMoney } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check, Field, FormSheet, Row, num, text } from '../components/FormSheet'
 import { CodeNameSheet } from '../components/CodeNameSheet'
+import { useListKeys } from '../lib/listkeys'
 
 export interface PartyRow {
   id: string
@@ -110,6 +111,13 @@ export default function Parties() {
     })
   }, [rows, q, route, showInactive])
 
+  // Down and Up walk the list, Enter opens the highlighted party.
+  const { rowProps } = useListKeys<PartyRow>({
+    items: filtered,
+    onOpen: (r) => setEditing(r),
+    enabled: !editing && !managingRoutes,
+  })
+
   if (rows === null) return <Loading what="Loading parties" />
 
   return (
@@ -137,6 +145,7 @@ export default function Parties() {
           <input
             id="party-search"
             type="search"
+            autoComplete="off"
             placeholder="Search by name, code, city or phone"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -173,10 +182,13 @@ export default function Parties() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {filtered.map((r, i) => (
                   <tr
                     key={r.id}
-                    className={`clickable${r.is_active ? '' : ' inactive'}`}
+                    {...rowProps(i)}
+                    className={`clickable${r.is_active ? '' : ' inactive'}${
+                      rowProps(i).className ? ' ' + rowProps(i).className : ''
+                    }`}
                     onClick={() => setEditing(r)}
                   >
                     <td className="primary-cell">

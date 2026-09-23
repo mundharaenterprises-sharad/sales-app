@@ -6,6 +6,7 @@ import { fmtAge, fmtDate, fmtMoney, fmtQty } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check, Field, FormSheet, Row, num, text } from '../components/FormSheet'
 import { CodeNameSheet } from '../components/CodeNameSheet'
+import { useListKeys } from '../lib/listkeys'
 
 interface ProductRow {
   id: string
@@ -118,6 +119,12 @@ export default function Products() {
     })
   }, [rows, q, group, showInactive])
 
+  const { rowProps } = useListKeys<ProductRow>({
+    items: filtered,
+    onOpen: (r) => setEditing(r),
+    enabled: !editing && !managingGroups,
+  })
+
   if (rows === null) return <Loading what="Loading products" />
 
   return (
@@ -145,6 +152,7 @@ export default function Products() {
           <input
             id="product-search"
             type="search"
+            autoComplete="off"
             placeholder="Search by name, code or group"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -181,10 +189,13 @@ export default function Products() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {filtered.map((r, i) => (
                   <tr
                     key={r.id}
-                    className={`clickable${r.is_active ? '' : ' inactive'}`}
+                    {...rowProps(i)}
+                    className={`clickable${r.is_active ? '' : ' inactive'}${
+                      rowProps(i).className ? ' ' + rowProps(i).className : ''
+                    }`}
                     onClick={() => setEditing(r)}
                   >
                     <td className="primary-cell">

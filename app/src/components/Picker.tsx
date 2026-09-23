@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useListKeys } from '../lib/listkeys'
 
 /**
  * A full-height searchable list for choosing a customer or a product.
@@ -65,6 +66,16 @@ export function Picker<T>({
       .slice(0, 200)
   }, [items, q, searchOf])
 
+  const pick = useCallback(
+    (it: T) => {
+      onPick(it)
+      onClose()
+    },
+    [onPick, onClose],
+  )
+
+  const { rowProps } = useListKeys<T>({ items: filtered, onOpen: pick })
+
   return (
     <div className="sheet-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
@@ -77,6 +88,7 @@ export function Picker<T>({
           <input
             ref={inputRef}
             type="search"
+            autoComplete="off"
             placeholder={placeholder}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -90,11 +102,12 @@ export function Picker<T>({
               <p>{q ? `Nothing matches “${q}”.` : emptyText ?? 'There is nothing to choose from.'}</p>
             </div>
           ) : (
-            filtered.map((it) => (
+            filtered.map((it, i) => (
               <button
                 key={keyOf(it)}
-                className="sheet-row"
-                onClick={() => { onPick(it); onClose() }}
+                ref={rowProps(i).ref as unknown as React.Ref<HTMLButtonElement>}
+                className={`sheet-row${rowProps(i).className ? ' ' + rowProps(i).className : ''}`}
+                onClick={() => pick(it)}
               >
                 {render(it)}
               </button>

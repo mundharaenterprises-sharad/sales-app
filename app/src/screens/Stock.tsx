@@ -146,6 +146,7 @@ export default function Stock() {
           <input
             id="search"
             type="search"
+            autoComplete="off"
             placeholder="Search by name or code"
             value={q}
             onChange={(e) => setQ(e.target.value)}

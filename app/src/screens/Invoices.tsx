@@ -148,6 +148,7 @@ export default function Invoices() {
               <input
                 id="iq"
                 type="search"
+            autoComplete="off"
                 placeholder="Search by bill number, customer or route"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}

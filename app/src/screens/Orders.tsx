@@ -267,6 +267,7 @@ export default function Orders() {
               <input
                 id="oq"
                 type="search"
+            autoComplete="off"
                 placeholder="Search by order number, customer or route"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}

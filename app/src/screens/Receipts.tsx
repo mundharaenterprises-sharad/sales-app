@@ -146,6 +146,7 @@ export default function Receipts() {
               <input
                 id="rq"
                 type="search"
+            autoComplete="off"
                 placeholder="Search by number, customer or route"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
