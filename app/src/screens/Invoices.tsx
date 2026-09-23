@@ -9,6 +9,7 @@ import { useSession } from '../lib/session'
 interface InvoiceRow {
   invoice_id: string
   doc_no: string
+  party_id: string
   party_code: string
   party_name: string
   route_name: string
@@ -237,6 +238,7 @@ export default function Invoices() {
                   <th className="num">Amount</th>
                   <th className="num">Paid</th>
                   <th className="num">Due</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -311,6 +313,15 @@ export default function Invoices() {
                         </span>
                       ) : (
                         <span className="pill good">Settled</span>
+                      )}
+                    </td>
+                    <td data-label="" className="num">
+                      {can('ACCOUNTS', 'ADMIN') && Number(r.outstanding) > 0 && (
+                        <Link
+                          to={`/receipts/new?party=${r.party_id}&invoice=${r.invoice_id}`}
+                        >
+                          <button>Pay</button>
+                        </Link>
                       )}
                     </td>
                   </tr>

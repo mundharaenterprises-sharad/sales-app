@@ -42,6 +42,8 @@ select * from (values
                                           where schemaname = 'public'
                                             and tablename = 'party'
                                             and policyname = 'party_read')),
+  ('022', 'one-step payment',
+                                 to_regprocedure('public.receive_payment(uuid,date,numeric,jsonb,uuid,text)') is not null),
   ('021', 'full bill list',      to_regclass('public.v_invoice_list') is not null
                              and exists (select 1 from information_schema.columns
                                           where table_schema = 'public'

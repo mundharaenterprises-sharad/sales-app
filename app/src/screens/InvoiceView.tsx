@@ -93,6 +93,7 @@ export default function InvoiceView() {
   // A mistake can be corrected on the day the bill was raised, and only while
   // no payment has been put against it. The database has the final say; this
   // just decides whether to offer the button.
+  const invParty = (inv as unknown as { party_id?: string } | null)?.party_id ?? ''
   const today = new Date().toISOString().slice(0, 10)
   const canCorrect =
     inv != null && inv.status === 'ACTIVE' && inv.invoice_date === today
@@ -108,6 +109,11 @@ export default function InvoiceView() {
           <button className="primary" onClick={() => window.print()} disabled={!inv}>
             Print
           </button>
+          {can('ACCOUNTS', 'ADMIN') && inv?.status !== 'CANCELLED' && (
+            <button onClick={() => nav(`/receipts/new?party=${invParty}&invoice=${inv!.id}`)}>
+              Record payment
+            </button>
+          )}
           {can('ACCOUNTS', 'ADMIN') && canCorrect && (
             <button onClick={() => nav(`/invoices/new?revise=${inv!.id}`)} disabled={busy}>
               Correct bill

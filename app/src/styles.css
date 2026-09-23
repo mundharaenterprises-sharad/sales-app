@@ -641,3 +641,5 @@ table.data th input[type='checkbox'] { width: 18px; height: 18px; }
   .print-stack .page-break { break-before: page; page-break-before: always; }
   .print-stack .sheet-a5 + .sheet-a5 { margin-top: 0; }
 }
+
+.strong.bad { color: var(--bad); }
