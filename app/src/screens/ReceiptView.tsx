@@ -5,6 +5,7 @@ import { fmtDate, fmtMoney } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { num } from '../components/FormSheet'
 import { useSession } from '../lib/session'
+import { AgePill } from '../components/AgePill'
 
 /**
  * One payment, and which bills it pays.
@@ -290,6 +291,7 @@ export default function ReceiptView() {
                   <thead>
                     <tr>
                       <th>Bill</th>
+                      <th>Age</th>
                       <th className="num">Bill total</th>
                       <th className="num">Owed</th>
                       <th className="num" style={{ width: 160 }}>This payment</th>
@@ -308,8 +310,11 @@ export default function ReceiptView() {
                             </Link>
                             <br />
                             <span className="muted" style={{ fontSize: 12.5 }}>
-                              {fmtDate(b.invoice_date)} · {b.days_outstanding} days
+                              {fmtDate(b.invoice_date)}
                             </span>
+                          </td>
+                          <td data-label="Age">
+                            <AgePill days={b.days_outstanding} />
                           </td>
                           <td data-label="Bill total" className="num">
                             {fmtMoney(b.effective_total)}

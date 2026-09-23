@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
 import { useOnline, useSession } from '../lib/session'
@@ -179,6 +180,7 @@ export default function Parties() {
                   <th>Phone</th>
                   <th>City</th>
                   <th className="num">Credit</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -209,6 +211,14 @@ export default function Parties() {
                       )}
                     </td>
                     <td data-label="City" className="muted">{r.city ?? '—'}</td>
+                    <td data-label="" className="num">
+                      <Link
+                        to={`/parties/${r.id}/ledger`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button>Ledger</button>
+                      </Link>
+                    </td>
                     <td data-label="Credit" className="num">
                       <span>
                         {Number(r.credit_limit) > 0 ? fmtMoney(r.credit_limit) : <span className="muted">No limit</span>}

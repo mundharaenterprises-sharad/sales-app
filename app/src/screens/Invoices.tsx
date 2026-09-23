@@ -5,6 +5,7 @@ import { fmtDate, fmtMoney } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
+import { AgePill } from '../components/AgePill'
 
 interface InvoiceRow {
   invoice_id: string
@@ -308,9 +309,7 @@ export default function Invoices() {
                         <span className="strong">
                           {fmtMoney(r.outstanding)}
                           <br />
-                          <span className="muted" style={{ fontSize: 12 }}>
-                            {r.days_outstanding} days
-                          </span>
+                          <AgePill days={r.days_outstanding} />
                         </span>
                       ) : (
                         <span className="pill good">Settled</span>

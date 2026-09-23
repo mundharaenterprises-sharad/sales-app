@@ -16,6 +16,13 @@ import InvoicePrintBatch from './screens/InvoicePrintBatch'
 import Receipts from './screens/Receipts'
 import NewReceipt from './screens/NewReceipt'
 import ReceiptView from './screens/ReceiptView'
+import PartyLedger from './screens/PartyLedger'
+import Reports from './screens/Reports'
+import AgeingReport from './screens/reports/Ageing'
+import SalesRegister from './screens/reports/SalesRegister'
+import Collections from './screens/reports/Collections'
+import ProductSales from './screens/reports/ProductSales'
+import StockReport from './screens/reports/StockReport'
 import { Banner, Loading } from './components/ui'
 import { supabase } from './lib/supabase'
 
@@ -86,6 +93,13 @@ function Gate() {
         />
         <Route path="receipts/:id" element={<ReceiptView />} />
         <Route path="parties" element={<Parties />} />
+        <Route path="parties/:id/ledger" element={<PartyLedger />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="reports/ageing" element={<AgeingReport />} />
+        <Route path="reports/sales" element={<SalesRegister />} />
+        <Route path="reports/collections" element={<Collections />} />
+        <Route path="reports/products" element={<ProductSales />} />
+        <Route path="reports/stock" element={<StockReport />} />
         <Route path="products" element={<Products />} />
         <Route
           path="import"
