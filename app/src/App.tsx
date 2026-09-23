@@ -9,6 +9,10 @@ import Orders from './screens/Orders'
 import NewOrder from './screens/NewOrder'
 import Parties from './screens/Parties'
 import Products from './screens/Products'
+import Invoices from './screens/Invoices'
+import NewInvoice from './screens/NewInvoice'
+import InvoiceView from './screens/InvoiceView'
+import InvoicePrintBatch from './screens/InvoicePrintBatch'
 import { Banner, Loading } from './components/ui'
 import { supabase } from './lib/supabase'
 
@@ -63,6 +67,15 @@ function Gate() {
         <Route path="stock" element={<Stock />} />
         <Route path="orders" element={<Orders />} />
         <Route path="orders/new" element={<NewOrder />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route
+          path="invoices/new"
+          element={
+            user?.role === 'REP' ? <Navigate to="/invoices" replace /> : <NewInvoice />
+          }
+        />
+        <Route path="invoices/print" element={<InvoicePrintBatch />} />
+        <Route path="invoices/:id" element={<InvoiceView />} />
         <Route path="parties" element={<Parties />} />
         <Route path="products" element={<Products />} />
         <Route
