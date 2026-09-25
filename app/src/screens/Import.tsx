@@ -6,6 +6,9 @@ import { Banner, ErrorBanner, Spinner } from '../components/ui'
 
 type Status = 'pending' | 'checking' | 'problems' | 'ready' | 'importing' | 'done' | 'blocked'
 
+/** What to do about a code that is already in the database. */
+type Existing = 'stop' | 'skip' | 'update'
+
 interface SheetState {
   sheet: ParsedSheet
   status: Status
@@ -19,7 +22,7 @@ export default function Import() {
   const [fileName, setFileName] = useState<string | null>(null)
   const [states, setStates] = useState<SheetState[]>([])
   const [ignored, setIgnored] = useState<string[]>([])
-  const [skipExisting, setSkipExisting] = useState(false)
+  const [existing, setExisting] = useState<Existing>('stop')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [finished, setFinished] = useState(false)
@@ -68,8 +71,8 @@ export default function Import() {
       )
       if (sheets.length === 0) {
         setError(
-          'No sheets in that file looked like Routes, Product Groups, Suppliers, ' +
-            'Parties or Products. Is it the master data template?',
+          'No sheets in that file looked like Master Groups, Routes, Product ' +
+            'Groups, Suppliers, Parties or Products. Is it the master data template?',
         )
       }
     } catch (e) {
@@ -128,7 +131,8 @@ export default function Import() {
         p_entity: st.sheet.entity,
         p_rows: st.sheet.rows,
         p_dry_run: true,
-        p_skip_existing: skipExisting,
+        p_skip_existing: existing === 'skip',
+        p_update_existing: existing === 'update',
       })
 
       if (check.error) {
@@ -145,7 +149,7 @@ export default function Import() {
         continue
       }
 
-      if ((report.would_import ?? 0) === 0) {
+      if ((report.would_import ?? 0) + (report.would_update ?? 0) === 0) {
         patch(i, {
           status: 'done',
           report,
@@ -161,7 +165,8 @@ export default function Import() {
         p_entity: st.sheet.entity,
         p_rows: st.sheet.rows,
         p_dry_run: false,
-        p_skip_existing: skipExisting,
+        p_skip_existing: existing === 'skip',
+        p_update_existing: existing === 'update',
       })
 
       if (write.error) {
@@ -181,7 +186,7 @@ export default function Import() {
 
     setBusy(false)
     setFinished(!stopped)
-  }, [states, skipExisting])
+  }, [states, existing])
 
   const postOpening = useCallback(async () => {
     setBusy(true)
@@ -210,8 +215,8 @@ export default function Import() {
         <h2>1. Choose your workbook</h2>
         <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
           The file from the master data template. Sheets are matched by name, so
-          keep them called Routes, Product Groups, Suppliers, Parties and
-          Products.
+          keep them called Master Groups, Routes, Product Groups, Suppliers,
+          Parties and Products.
         </p>
 
         <input
@@ -244,28 +249,48 @@ export default function Import() {
               customers and products point at them.
             </p>
 
-            <label
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                marginTop: 14, cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={skipExisting}
-                onChange={(e) => setSkipExisting(e.target.checked)}
-                style={{ width: 'auto', minHeight: 0, marginTop: 3 }}
-                disabled={busy}
-              />
-              <span style={{ fontSize: 14 }}>
-                <strong>Skip rows that are already in the database.</strong>
-                <br />
-                <span style={{ color: 'var(--ink-3)' }}>
-                  Turn this on when you are re-running after fixing something. You
-                  will be told exactly which rows were skipped.
-                </span>
-              </span>
-            </label>
+            <h3 style={{ marginTop: 18 }}>If a code is already in the database</h3>
+
+            <Choice
+              name="existing"
+              value="stop"
+              current={existing}
+              onPick={setExisting}
+              disabled={busy}
+              title="Stop and tell me"
+              detail="Nothing is written. Use this when you are adding to the list and
+                      a repeat means something is wrong."
+            />
+            <Choice
+              name="existing"
+              value="skip"
+              current={existing}
+              onPick={setExisting}
+              disabled={busy}
+              title="Leave it as it is, import the rest"
+              detail="For re-running after fixing a few rows. You will be told exactly
+                      which ones were left alone."
+            />
+            <Choice
+              name="existing"
+              value="update"
+              current={existing}
+              onPick={setExisting}
+              disabled={busy}
+              title="Replace it with what the sheet says"
+              detail="For when the spreadsheet is the list — putting opening balances
+                      on customers who are already in the app, or repricing products.
+                      Codes are matched; everything else on the row is overwritten."
+            />
+
+            {existing === 'update' && (
+              <Banner tone="warn">
+                Rows that match by code will be <strong>overwritten</strong> —
+                names, routes, prices, opening balances, the lot. Blank cells
+                overwrite too. Make sure the sheet is the version you want to
+                keep.
+              </Banner>
+            )}
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -290,11 +315,12 @@ export default function Import() {
               </span>
             )}
 
-            {anyExisting && !skipExisting && (
+            {anyExisting && existing === 'stop' && (
               <Banner tone="warn">
-                Some rows are already in the database. Tick{' '}
-                <strong>Skip rows that are already in the database</strong> above
-                to import only what is new.
+                Some rows are already in the database. Choose{' '}
+                <strong>Leave it as it is</strong> above to import only what is
+                new, or <strong>Replace it with what the sheet says</strong> to
+                overwrite them from the sheet.
               </Banner>
             )}
           </div>
@@ -340,8 +366,60 @@ export default function Import() {
   )
 }
 
+/** One line of a radio group, with room for a sentence explaining itself. */
+function Choice<T extends string>({
+  name,
+  value,
+  current,
+  onPick,
+  title,
+  detail,
+  disabled,
+}: {
+  name: string
+  value: T
+  current: T
+  onPick: (v: T) => void
+  title: string
+  detail: string
+  disabled?: boolean
+}) {
+  return (
+    <label
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        marginTop: 12, cursor: disabled ? 'default' : 'pointer',
+      }}
+    >
+      <input
+        type="radio"
+        name={name}
+        checked={current === value}
+        onChange={() => onPick(value)}
+        style={{ width: 'auto', minHeight: 0, marginTop: 3 }}
+        disabled={disabled}
+      />
+      <span style={{ fontSize: 14 }}>
+        <strong>{title}</strong>
+        <br />
+        <span style={{ color: 'var(--ink-3)' }}>{detail}</span>
+      </span>
+    </label>
+  )
+}
+
 function SheetCard({ st, onToggle }: { st: SheetState; onToggle: () => void }) {
   const { sheet, status, report, message } = st
+
+  // "12 imported · 30 updated", leaving out whichever is zero.
+  const outcome = report
+    ? [
+        report.imported > 0 ? `${report.imported} imported` : null,
+        report.updated > 0 ? `${report.updated} updated` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
 
   const pill = {
     pending:   <span className="pill flat">Not checked</span>,
@@ -349,7 +427,7 @@ function SheetCard({ st, onToggle }: { st: SheetState; onToggle: () => void }) {
     importing: <span className="pill flat">Importing…</span>,
     problems:  <span className="pill bad">{report ? `${report.errors} problem${report.errors === 1 ? '' : 's'}` : 'Problem'}</span>,
     ready:     <span className="pill warn">Ready</span>,
-    done:      <span className="pill good">{report && report.imported > 0 ? `${report.imported} imported` : 'Done'}</span>,
+    done:      <span className="pill good">{outcome || 'Done'}</span>,
     blocked:   <span className="pill flat">Skipped</span>,
   }[status]
 
@@ -366,7 +444,7 @@ function SheetCard({ st, onToggle }: { st: SheetState; onToggle: () => void }) {
           <span className="sub">
             {sheet.sheetName} · {sheet.rows.length} row
             {sheet.rows.length === 1 ? '' : 's'}
-            {report && report.skipped > 0 && ` · ${report.skipped} skipped`}
+            {report && report.skipped > 0 && ` · ${report.skipped} left alone`}
           </span>
         </div>
         {pill}

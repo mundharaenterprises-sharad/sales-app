@@ -39,8 +39,9 @@ insert into public.app_user (id, full_name, role) values
 
 insert into public.route (id, code, name)
   values ('aaaaaaaa-0000-0000-0000-000000000001', 'R1', 'Route One');
-insert into public.product_group (id, code, name)
-  values ('bbbbbbbb-0000-0000-0000-000000000001', 'G1', 'Group One');
+insert into public.product_group (id, code, name, master_group_id)
+select 'bbbbbbbb-0000-0000-0000-000000000001', 'G1', 'Group One', id
+  from public.master_group where code = 'OTHERS';
 insert into public.supplier (id, code, name)
   values ('cccccccc-0000-0000-0000-000000000001', 'S1', 'Supplier One');
 insert into public.party (id, code, name, route_id)

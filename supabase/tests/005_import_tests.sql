@@ -92,9 +92,9 @@ do $$
 declare r jsonb;
 begin
   r := public.import_masters('product_group',
-    '[{"code":"G1","name":"Biscuits"},
-      {"code":"G2","name":"Noodles"},
-      {"code":"G1","name":"Biscuits again"}]'::jsonb, true);
+    '[{"code":"G1","name":"Biscuits","master_code":"OTHERS"},
+      {"code":"G2","name":"Noodles","master_code":"OTHERS"},
+      {"code":"G1","name":"Biscuits again","master_code":"OTHERS"}]'::jsonb, true);
 
   perform pg_temp.eq((r ->> 'errors')::numeric, 2,
                      'both duplicate rows flagged');
@@ -106,8 +106,8 @@ begin
   -- A real run must refuse outright.
   begin
     perform public.import_masters('product_group',
-      '[{"code":"G1","name":"Biscuits"},
-        {"code":"G1","name":"Biscuits again"}]'::jsonb, false);
+      '[{"code":"G1","name":"Biscuits","master_code":"OTHERS"},
+        {"code":"G1","name":"Biscuits again","master_code":"OTHERS"}]'::jsonb, false);
     perform pg_temp.fail('a sheet with duplicates was imported');
   exception when sqlstate 'SA004' then
     null;
@@ -164,7 +164,7 @@ do $$
 declare r jsonb;
 begin
   perform public.import_masters('product_group',
-    '[{"code":"G1","name":"Biscuits"},{"code":"G2","name":"Noodles"}]'::jsonb, false);
+    '[{"code":"G1","name":"Biscuits","master_code":"OTHERS"},{"code":"G2","name":"Noodles","master_code":"OTHERS"}]'::jsonb, false);
 
   r := public.import_masters('product',
     '[{"code":"P1","name":"Marie 100g","group_code":"G1","base_uom":"PCS",

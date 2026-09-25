@@ -29,7 +29,7 @@ set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
 do $$
 begin
   perform public.import_masters('route', '[{"code":"R1","name":"Town"}]'::jsonb, false);
-  perform public.import_masters('product_group', '[{"code":"G1","name":"Biscuits"}]'::jsonb, false);
+  perform public.import_masters('product_group', '[{"code":"G1","name":"Biscuits","master_code":"OTHERS"}]'::jsonb, false);
   perform public.import_masters('party',
     '[{"code":"C1","name":"Ram Store","route_code":"R1"}]'::jsonb, false);
   perform public.import_masters('product',

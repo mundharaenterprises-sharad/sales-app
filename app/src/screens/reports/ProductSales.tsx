@@ -20,6 +20,7 @@ interface Raw {
   product_code: string
   product_name: string
   group_name: string
+  master_name: string | null
   base_uom: string
   invoice_date: string
   qty_sold_base: number
@@ -32,6 +33,7 @@ interface Row {
   product_code: string
   product_name: string
   group_name: string
+  master_name: string | null
   base_uom: string
   qty: number
   sales: number
@@ -83,6 +85,7 @@ export default function ProductSales() {
           product_code: r.product_code,
           product_name: r.product_name,
           group_name: r.group_name,
+          master_name: r.master_name,
           base_uom: r.base_uom,
           qty: 0,
           sales: 0,
@@ -99,6 +102,7 @@ export default function ProductSales() {
   const cols: ReportColumn<Row>[] = [
     { header: 'Product', value: (r) => r.product_name, width: 30 },
     { header: 'Code', value: (r) => r.product_code },
+    { header: 'Master group', value: (r) => r.master_name, width: 16 },
     { header: 'Group', value: (r) => r.group_name },
     {
       header: 'Quantity',

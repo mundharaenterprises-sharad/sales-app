@@ -57,11 +57,14 @@ select * from (values
                                  to_regprocedure('public.allocate_credit(jsonb,uuid,uuid)') is not null),
   ('015', 'reports',             to_regclass('public.v_party_ledger') is not null),
   ('016', 'import helpers',      to_regprocedure('app.imp_text(text)') is not null),
-  -- 017 replaces 016's three-argument import function. Both being present is
-  -- as wrong as neither: every call becomes ambiguous.
+  -- 017 replaces 016's three-argument import function, and 023 replaces 017's
+  -- four-argument one. Any two of them being present is as wrong as none:
+  -- every call becomes ambiguous.
   ('017', 'import skip-existing',
-                                 to_regprocedure('public.import_masters(text,jsonb,boolean,boolean)') is not null
-                             and to_regprocedure('public.import_masters(text,jsonb,boolean)') is null),
+                                 to_regprocedure('public.import_masters(text,jsonb,boolean)') is null
+                             and exists (select 1 from pg_proc
+                                          where proname = 'import_masters'
+                                            and prosrc like '%p_skip_existing%')),
   ('018', 'pack prices',         exists (select 1 from information_schema.columns
                                           where table_schema = 'public'
                                             and table_name = 'product'
@@ -77,7 +80,23 @@ select * from (values
                              and to_regclass('public.v_product_master') is not null
                              and exists (select 1 from pg_trigger
                                           where tgname = 'party_guard'
-                                            and not tgisinternal))
+                                            and not tgisinternal)),
+  ('023', 'import update-existing',
+                                 to_regprocedure('public.import_masters(text,jsonb,boolean,boolean,boolean)') is not null
+                             and to_regprocedure('public.import_masters(text,jsonb,boolean,boolean)') is null),
+  ('024', 'master groups',       to_regclass('public.master_group') is not null
+                             and to_regclass('public.v_party_dues_by_master') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_invoice'
+                                            and column_name = 'master_group_id')
+                             and exists (select 1 from pg_trigger
+                                          where tgname = 'sales_invoice_line_master'
+                                            and not tgisinternal)),
+  ('025', 'import master groups',
+                                 exists (select 1 from pg_proc
+                                          where proname = 'import_masters'
+                                            and prosrc like '%master_code%'))
 ) as m(version, what, present);
 
 insert into _health
@@ -98,11 +117,11 @@ select 0, '  missing ' || version || ' — ' || what,
  where not present;
 
 insert into _health
-select 1, 'tables', count(*)::text, '24', count(*) = 24
+select 1, 'tables', count(*)::text, '25', count(*) = 25
   from pg_tables where schemaname = 'public';
 
 insert into _health
-select 2, 'views', count(*)::text, '19 or more', count(*) >= 19
+select 2, 'views', count(*)::text, '22 or more', count(*) >= 22
   from pg_views where schemaname = 'public';
 
 insert into _health

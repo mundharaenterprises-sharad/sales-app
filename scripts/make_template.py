@@ -27,14 +27,23 @@ BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
 # (field, required, width, help text, example value)
 SHEETS = [
+    ("0. Master Groups", "master_group", [
+        ("code", True, 16, "PARLE, CURRENT and OTHERS already exist in the app. "
+                           "Only fill this sheet in to add another one.", "EXAMPLE-M"),
+        ("name", True, 32, "How it should read on screen, e.g. Haldiram.", "Example Master"),
+    ]),
+
     ("1. Routes", "route", [
         ("code", True,  14, "Short code you will type elsewhere, e.g. R1. Must be unique.", "EXAMPLE-R"),
         ("name", True,  32, "Full route name, e.g. Biratnagar Town.", "Example Route"),
     ]),
 
     ("2. Product Groups", "product_group", [
-        ("code", True,  14, "Short code, e.g. G1. Must be unique.", "EXAMPLE-G"),
-        ("name", True,  32, "Group name, e.g. Biscuits.", "Example Group"),
+        ("code",        True, 14, "Short code, e.g. G1. Must be unique.", "EXAMPLE-G"),
+        ("name",        True, 32, "Group name, e.g. Biscuits.", "Example Group"),
+        ("master_code", True, 16, "Which master group this belongs to: PARLE, CURRENT or OTHERS. "
+                                  "This is what decides whether a bill counts as Parle money or "
+                                  "Current money.", "OTHERS"),
     ]),
 
     ("3. Suppliers", "supplier", [
@@ -86,8 +95,19 @@ def add_instructions(wb):
     lines = [
         ("Sales App — master data", "title"),
         ("", None),
-        ("Fill in the five sheets in the order they are numbered. Parties point at "
-         "Routes, and Products point at Product Groups, so those must exist first.", "body"),
+        ("Fill in the sheets in the order they are numbered. Each points at the one "
+         "before it: product groups belong to a master group, parties sit on a route, "
+         "and products belong to a product group.", "body"),
+        ("", None),
+        ("Master groups", "head"),
+        ("The top level: PARLE, CURRENT and OTHERS. Every product group belongs to one, "
+         "so every product does too, and so does every bill. That is what lets the app "
+         "say how much a shop owes on Parle and how much on Current, separately.", "body"),
+        ("A bill can only carry one master group. Selling a shop both means two bills — "
+         "the app will refuse to put them on one, because a part-paid mixed bill could "
+         "never be split honestly afterwards.", "body"),
+        ("Those three already exist in the app. Leave sheet 0 empty unless you are "
+         "adding a fourth.", "body"),
         ("", None),
         ("Before you import", "head"),
         ("Row 2 of every sheet is an EXAMPLE, shaded yellow. Delete that row before "

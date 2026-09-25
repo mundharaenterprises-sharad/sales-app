@@ -42,6 +42,12 @@ echo "==> Concurrency tests"
 "$ROOT/supabase/tests/003_concurrency.sh"
 
 echo
+echo "==> Go-live reset"
+# Deliberately last against this database: it clears it out. Everything the
+# suites above created is exactly what the reset has to be able to destroy.
+"$ROOT/supabase/tests/010_reset.sh"
+
+echo
 echo "==> Money tests"
 rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/004_money_tests.sql" 2>&1 | strip
@@ -65,6 +71,16 @@ echo
 echo "==> Receive payment tests"
 rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/008_receive_payment_tests.sql" 2>&1 | strip
+
+echo
+echo "==> Import update tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/009_import_update_tests.sql" 2>&1 | strip
+
+echo
+echo "==> Master group tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/011_master_group_tests.sql" 2>&1 | strip
 
 echo
 echo "All suites passed."

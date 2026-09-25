@@ -35,6 +35,7 @@ interface UserRow {
 interface OpenBill {
   invoice_id: string
   doc_no: string
+  master_name: string | null
   invoice_date: string
   effective_total: number
   outstanding: number
@@ -118,7 +119,7 @@ export default function NewReceipt() {
       setBills(null)
       const { data, error } = await supabase
         .from('v_invoice_list')
-        .select('invoice_id, doc_no, invoice_date, effective_total, outstanding, days_outstanding')
+        .select('invoice_id, doc_no, master_name, invoice_date, effective_total, outstanding, days_outstanding')
         .eq('party_id', party!.party_id)
         .neq('status', 'CANCELLED')
         .gt('outstanding', 0)
@@ -272,6 +273,7 @@ export default function NewReceipt() {
                 <thead>
                   <tr>
                     <th>Bill</th>
+                    <th>Group</th>
                     <th>Age</th>
                     <th className="num">Bill total</th>
                     <th className="num">Owed</th>
@@ -293,6 +295,9 @@ export default function NewReceipt() {
                           <span className="muted" style={{ fontSize: 12.5 }}>
                             {fmtDate(b.invoice_date)}
                           </span>
+                        </td>
+                        <td data-label="Group" className="muted">
+                          {b.master_name ?? '—'}
                         </td>
                         <td data-label="Age">
                           <AgePill days={b.days_outstanding} />

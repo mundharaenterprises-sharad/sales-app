@@ -12,6 +12,7 @@ interface Row {
   invoice_date: string
   party_code: string
   party_name: string
+  master_name: string | null
   route_name: string
   order_no: string | null
   rep_name: string | null
@@ -73,6 +74,7 @@ export default function SalesRegister() {
     { header: 'Date', value: (r) => r.invoice_date, cell: (r) => fmtDate(r.invoice_date) },
     { header: 'Party', value: (r) => r.party_name, width: 26 },
     { header: 'Route', value: (r) => r.route_name },
+    { header: 'Group', value: (r) => r.master_name, width: 14 },
     { header: 'Order', value: (r) => r.order_no ?? '' },
     { header: 'Rep', value: (r) => r.rep_name ?? '' },
     { header: 'Gross', value: (r) => Number(r.gross_total), type: 'money', align: 'right' },

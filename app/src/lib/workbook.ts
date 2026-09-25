@@ -10,7 +10,8 @@ import readXlsxFile from 'read-excel-file/browser'
  * that string so the error can say so, rather than arriving as a silent NaN.
  */
 
-export type Entity = 'route' | 'product_group' | 'supplier' | 'party' | 'product'
+export type Entity =
+  | 'master_group' | 'route' | 'product_group' | 'supplier' | 'party' | 'product'
 
 export interface EntitySpec {
   entity: Entity
@@ -23,8 +24,10 @@ export interface EntitySpec {
 }
 
 export const ENTITIES: EntitySpec[] = [
+  { entity: 'master_group',  label: 'Master Groups',  order: 0, match: ['mastergroup', 'master'] },
   { entity: 'route',         label: 'Routes',         order: 1, match: ['route'] },
-  { entity: 'product_group', label: 'Product Groups', order: 2, match: ['productgroup', 'group'] },
+  { entity: 'product_group', label: 'Product Groups', order: 2, match: ['productgroup', 'group'],
+    needs: 'Master Groups' },
   { entity: 'supplier',      label: 'Suppliers',      order: 3, match: ['supplier'] },
   { entity: 'party',         label: 'Parties',        order: 4, match: ['party', 'parties', 'customer'],
     needs: 'Routes' },
@@ -71,8 +74,10 @@ function entityForSheet(sheetName: string): EntitySpec | null {
 
 /** Every field name the importer accepts, per entity. */
 const FIELDS: Record<Entity, string[]> = {
+  master_group: ['code', 'name'],
   route: ['code', 'name'],
-  product_group: ['code', 'name'],
+  // master_code says which of Parle / Current / Others this group belongs to.
+  product_group: ['code', 'name', 'master_code'],
   supplier: ['code', 'name', 'contact_person', 'phone', 'address', 'city'],
   party: [
     'code', 'name', 'route_code', 'contact_person', 'phone', 'whatsapp_phone',
@@ -178,9 +183,12 @@ export interface ImportReport {
   error_detail: { row: number; field: string; value: string; message: string }[]
   dry_run: boolean
   imported: number
+  updated: number
   skipped: number
   skipped_detail: { row: number; code: string }[]
+  updated_detail: { row: number; code: string }[]
   already_exists: number
   would_import?: number
+  would_update?: number
   note?: string
 }

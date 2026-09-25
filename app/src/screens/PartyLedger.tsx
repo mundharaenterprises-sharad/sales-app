@@ -21,9 +21,28 @@ interface Entry {
   doc_type: string
   doc_no: string
   doc_id: string | null
+  master_code: string | null
+  master_name: string | null
   debit: number
   credit: number
   running_balance: number
+}
+
+/** What this customer owes, split by master group. */
+interface Dues {
+  master_code: string
+  master_name: string
+  sort_order: number
+  opening_balance: number
+  invoice_outstanding: number
+  due: number
+}
+
+interface Balance {
+  opening_balance: number
+  invoice_outstanding: number
+  on_account: number
+  balance: number
 }
 
 interface Ageing {
@@ -39,6 +58,7 @@ interface Ageing {
 interface OpenBill {
   invoice_id: string
   doc_no: string
+  master_name: string | null
   invoice_date: string
   effective_total: number
   settled: number
@@ -62,24 +82,36 @@ export default function PartyLedger() {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [ageing, setAgeing] = useState<Ageing | null>(null)
   const [bills, setBills] = useState<OpenBill[] | null>(null)
+  const [dues, setDues] = useState<Dues[]>([])
+  const [balance, setBalance] = useState<Balance | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
-    const [p, l, a, b] = await Promise.all([
+    const [p, l, a, b, d, bal] = await Promise.all([
       supabase.from('v_party_master').select('code, name, route_name').eq('id', id).single(),
       supabase
         .from('v_party_ledger')
-        .select('entry_date, doc_type, doc_no, doc_id, debit, credit, running_balance')
+        .select('entry_date, doc_type, doc_no, doc_id, master_code, master_name, debit, credit, running_balance')
         .eq('party_id', id)
         .order('entry_date'),
       supabase.from('v_ageing_by_party').select('*').eq('party_id', id).maybeSingle(),
       supabase
         .from('v_invoice_list')
-        .select('invoice_id, doc_no, invoice_date, effective_total, settled, outstanding, days_outstanding')
+        .select('invoice_id, doc_no, master_name, invoice_date, effective_total, settled, outstanding, days_outstanding')
         .eq('party_id', id)
         .gt('outstanding', 0)
         .order('invoice_date'),
+      supabase
+        .from('v_party_dues_by_master')
+        .select('master_code, master_name, sort_order, opening_balance, invoice_outstanding, due')
+        .eq('party_id', id)
+        .order('sort_order'),
+      supabase
+        .from('v_party_balance')
+        .select('opening_balance, invoice_outstanding, on_account, balance')
+        .eq('party_id', id)
+        .maybeSingle(),
     ])
 
     if (p.error) {
@@ -91,6 +123,8 @@ export default function PartyLedger() {
     else setEntries((l.data ?? []) as Entry[])
     setAgeing((a.data as Ageing) ?? null)
     setBills(((b.data ?? []) as unknown as OpenBill[]) ?? [])
+    setDues(((d.data ?? []) as unknown as Dues[]) ?? [])
+    setBalance((bal.data as Balance) ?? null)
   }, [id])
 
   useEffect(() => {
@@ -112,6 +146,12 @@ export default function PartyLedger() {
           ) : (
             r.doc_no
           ),
+      },
+      {
+        header: 'Group',
+        value: (r) => r.master_name,
+        cell: (r) => r.master_name ?? <span className="muted">—</span>,
+        width: 14,
       },
       { header: 'Charged', value: (r) => Number(r.debit) || null, type: 'money', align: 'right' },
       { header: 'Paid / credited', value: (r) => Number(r.credit) || null, type: 'money', align: 'right', width: 18 },
@@ -151,13 +191,39 @@ export default function PartyLedger() {
 
           <div className="tiles">
             <div className="tile">
-              <h3>Owes now</h3>
-              <div className="stat">{fmtMoney(owed)}</div>
+              <h3>Owes in total</h3>
+              <div className="stat">{fmtMoney(Number(balance?.balance ?? owed))}</div>
               <p>
                 {ageing?.open_invoices ?? 0} open bill{(ageing?.open_invoices ?? 0) === 1 ? '' : 's'}
                 {ageing?.oldest_days ? ` · oldest ${ageing.oldest_days} days` : ''}
               </p>
             </div>
+            {dues.map((d) => (
+              <div className="tile" key={d.master_code}>
+                <h3>{d.master_name}</h3>
+                <div className="stat">{fmtMoney(Number(d.due))}</div>
+                <p>
+                  {Number(d.opening_balance) !== 0
+                    ? `includes ${fmtMoney(Number(d.opening_balance))} opening`
+                    : `${fmtMoney(Number(d.invoice_outstanding))} on bills`}
+                </p>
+              </div>
+            ))}
+            {Number(balance?.on_account ?? 0) > 0 && (
+              <div className="tile">
+                <h3>Paid, not applied</h3>
+                <div className="stat">{fmtMoney(Number(balance?.on_account))}</div>
+                <p>Money in hand against no particular bill, so it counts to no group yet.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="page-head" style={{ marginTop: 16, marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>Ageing of unpaid bills</h3>
+            <span className="sub">An opening balance carries no bill date, so it is not aged</span>
+          </div>
+
+          <div className="tiles">
             {(
               [
                 ['0-15', ageing?.b_0_15],
@@ -189,6 +255,7 @@ export default function PartyLedger() {
               <thead>
                 <tr>
                   <th>Bill</th>
+                  <th>Group</th>
                   <th>Age</th>
                   <th className="num">Bill total</th>
                   <th className="num">Paid</th>
@@ -203,6 +270,7 @@ export default function PartyLedger() {
                       <br />
                       <span className="muted" style={{ fontSize: 12.5 }}>{fmtDate(b.invoice_date)}</span>
                     </td>
+                    <td data-label="Group">{b.master_name ?? <span className="muted">—</span>}</td>
                     <td data-label="Age"><AgePill days={b.days_outstanding} /></td>
                     <td data-label="Bill total" className="num">{fmtMoney(b.effective_total)}</td>
                     <td data-label="Paid" className="num muted">{fmtMoney(b.settled)}</td>

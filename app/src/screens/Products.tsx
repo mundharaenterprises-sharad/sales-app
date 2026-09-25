@@ -15,6 +15,7 @@ interface ProductRow {
   group_id: string
   group_code: string
   group_name: string
+  master_name: string | null
   base_uom: string
   pack_uom: string | null
   pack_size: number
@@ -62,6 +63,7 @@ export default function Products() {
 
   const [editing, setEditing] = useState<ProductRow | 'new' | null>(null)
   const [managingGroups, setManagingGroups] = useState(false)
+  const [managingMasters, setManagingMasters] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -114,7 +116,7 @@ export default function Products() {
       if (!showInactive && !r.is_active) return false
       if (group && r.group_name !== group) return false
       if (words.length === 0) return true
-      const hay = `${r.name} ${r.code} ${r.group_name}`.toLowerCase()
+      const hay = `${r.name} ${r.code} ${r.group_name} ${r.master_name ?? ''}`.toLowerCase()
       return words.every((w) => hay.includes(w))
     })
   }, [rows, q, group, showInactive])
@@ -122,7 +124,7 @@ export default function Products() {
   const { rowProps } = useListKeys<ProductRow>({
     items: filtered,
     onOpen: (r) => setEditing(r),
-    enabled: !editing && !managingGroups,
+    enabled: !editing && !managingGroups && !managingMasters,
   })
 
   if (rows === null) return <Loading what="Loading products" />
@@ -136,6 +138,9 @@ export default function Products() {
         </span>
         {isAdmin && (
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button onClick={() => setManagingMasters(true)} disabled={!online}>
+              Master groups
+            </button>
             <button onClick={() => setManagingGroups(true)} disabled={!online}>Groups</button>
             <button className="primary" onClick={() => setEditing('new')} disabled={!online}>
               Add product
@@ -183,6 +188,7 @@ export default function Products() {
                 <tr>
                   <th>Product</th>
                   <th>Group</th>
+                  <th>Master group</th>
                   <th>Pack</th>
                   <th className="num">Sale price</th>
                   {seesCost && <th className="num">Cost</th>}
@@ -205,6 +211,9 @@ export default function Products() {
                       <span className="muted" style={{ fontSize: 12.5 }}>{r.code}</span>
                     </td>
                     <td data-label="Group" className="muted">{r.group_name}</td>
+                    <td data-label="Master group" className="muted">
+                      {r.master_name ?? '—'}
+                    </td>
                     <td data-label="Pack" className="muted">
                       {r.pack_uom ? `1 ${r.pack_uom} = ${fmtQty(r.pack_size)} ${r.base_uom}` : `Loose, per ${r.base_uom}`}
                     </td>
@@ -259,6 +268,16 @@ export default function Products() {
           title="Product groups"
           noun="group"
           onClose={() => setManagingGroups(false)}
+          onChanged={() => void load()}
+        />
+      )}
+
+      {managingMasters && (
+        <CodeNameSheet
+          table="master_group"
+          title="Master groups"
+          noun="master group"
+          onClose={() => setManagingMasters(false)}
           onChanged={() => void load()}
         />
       )}

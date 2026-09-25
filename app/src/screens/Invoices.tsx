@@ -5,6 +5,7 @@ import { fmtDate, fmtMoney } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
+import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { AgePill } from '../components/AgePill'
 
 interface InvoiceRow {
@@ -14,6 +15,8 @@ interface InvoiceRow {
   party_code: string
   party_name: string
   route_name: string
+  master_code: string | null
+  master_name: string | null
   invoice_date: string
   net_total: number
   cancelled_value: number
@@ -46,6 +49,8 @@ export default function Invoices() {
   const [to, setTo] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [showCancelled, setShowCancelled] = useState(true)
+  const [master, setMaster] = useState('')
+  const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {
     setError(null)
@@ -79,6 +84,7 @@ export default function Invoices() {
       if (!showCancelled && r.status === 'CANCELLED') return false
       if (unpaidOnly && Number(r.outstanding) <= 0) return false
       if (route && r.route_name !== route) return false
+      if (master && r.master_code !== master) return false
       // Dates are plain YYYY-MM-DD, so comparing them as text is comparing them
       // as dates, with no timezone to get wrong.
       if (from && r.invoice_date < from) return false
@@ -88,7 +94,7 @@ export default function Invoices() {
         .toLowerCase()
         .includes(needle)
     })
-  }, [rows, q, unpaidOnly, route, from, to, showCancelled])
+  }, [rows, q, unpaidOnly, route, from, to, showCancelled, master])
 
   const toggle = (id: string) =>
     setPicked((s) => {
@@ -161,6 +167,7 @@ export default function Invoices() {
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
+            <MasterFilter masters={masters} value={master} onChange={setMaster} />
             <Check id="unpaid" checked={unpaidOnly} onChange={setUnpaidOnly}>
               Unpaid only
             </Check>
@@ -186,13 +193,14 @@ export default function Invoices() {
             >
               Today
             </button>
-            {(from || to || route || q || unpaidOnly || !showCancelled) && (
+            {(from || to || route || master || q || unpaidOnly || !showCancelled) && (
               <button
                 className="ghost"
                 onClick={() => {
                   setFrom('')
                   setTo('')
                   setRoute('')
+                  setMaster('')
                   setQ('')
                   setUnpaidOnly(false)
                   setShowCancelled(true)
@@ -237,6 +245,7 @@ export default function Invoices() {
                   </th>
                   <th>Bill</th>
                   <th>Customer</th>
+                  <th>Group</th>
                   <th className="num">Amount</th>
                   <th className="num">Paid</th>
                   <th className="num">Due</th>
@@ -301,6 +310,9 @@ export default function Invoices() {
                       <span className="muted" style={{ fontSize: 12.5 }}>
                         {r.party_code} · {r.route_name}
                       </span>
+                    </td>
+                    <td data-label="Group">
+                      {r.master_name ?? <span className="muted">—</span>}
                     </td>
                     <td data-label="Amount" className="num">{fmtMoney(r.effective_total)}</td>
                     <td data-label="Paid" className="num muted">{fmtMoney(r.settled)}</td>
