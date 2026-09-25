@@ -97,6 +97,15 @@ select * from (values
                                  exists (select 1 from pg_proc
                                           where proname = 'import_masters'
                                             and prosrc like '%master_code%')),
+  ('028', 'supplier editing',    to_regclass('public.v_supplier_list') is not null
+                             and exists (select 1 from pg_trigger
+                                          where tgname = 'supplier_guard'
+                                            and not tgisinternal)),
+  ('027', 'purchases and day book',
+                                 to_regprocedure('public.cancel_purchase(uuid,text)') is not null
+                             and to_regclass('public.v_day_book') is not null
+                             and to_regclass('public.v_day_summary') is not null
+                             and to_regclass('public.v_purchase_list') is not null),
   ('026', 'opening balances as documents',
                                  to_regprocedure('public.post_opening_balances(integer)') is not null
                              and to_regclass('public.v_opening_balance_status') is not null
@@ -128,7 +137,7 @@ select 1, 'tables', count(*)::text, '25', count(*) = 25
   from pg_tables where schemaname = 'public';
 
 insert into _health
-select 2, 'views', count(*)::text, '23 or more', count(*) >= 23
+select 2, 'views', count(*)::text, '27 or more', count(*) >= 27
   from pg_views where schemaname = 'public';
 
 insert into _health

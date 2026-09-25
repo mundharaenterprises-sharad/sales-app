@@ -12,9 +12,11 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/',      label: 'Home',   roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  { to: '/day-book', label: 'Day book', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/orders', label: 'Orders', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/invoices', label: 'Bills', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/receipts', label: 'Payments', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  { to: '/purchases', label: 'Purchases', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/stock', label: 'Stock',  roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/parties', label: 'Parties', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/products', label: 'Products', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },

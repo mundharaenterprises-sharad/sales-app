@@ -17,6 +17,11 @@ import Receipts from './screens/Receipts'
 import NewReceipt from './screens/NewReceipt'
 import ReceiptView from './screens/ReceiptView'
 import PartyLedger from './screens/PartyLedger'
+import Purchases from './screens/Purchases'
+import NewPurchase from './screens/NewPurchase'
+import PurchaseView from './screens/PurchaseView'
+import DayBook from './screens/DayBook'
+import Suppliers from './screens/Suppliers'
 import Reports from './screens/Reports'
 import AgeingReport from './screens/reports/Ageing'
 import SalesRegister from './screens/reports/SalesRegister'
@@ -92,6 +97,26 @@ function Gate() {
           element={user?.role === 'REP' ? <Navigate to="/receipts" replace /> : <NewReceipt />}
         />
         <Route path="receipts/:id" element={<ReceiptView />} />
+        <Route
+          path="day-book"
+          element={user?.role === 'REP' ? <Navigate to="/" replace /> : <DayBook />}
+        />
+        <Route
+          path="purchases"
+          element={user?.role === 'REP' ? <Navigate to="/" replace /> : <Purchases />}
+        />
+        <Route
+          path="suppliers"
+          element={user?.role === 'REP' ? <Navigate to="/" replace /> : <Suppliers />}
+        />
+        <Route
+          path="purchases/new"
+          element={user?.role === 'REP' ? <Navigate to="/" replace /> : <NewPurchase />}
+        />
+        <Route
+          path="purchases/:id"
+          element={user?.role === 'REP' ? <Navigate to="/" replace /> : <PurchaseView />}
+        />
         <Route path="parties" element={<Parties />} />
         <Route path="parties/:id/ledger" element={<PartyLedger />} />
         <Route path="reports" element={<Reports />} />
