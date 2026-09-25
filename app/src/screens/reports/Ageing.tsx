@@ -52,6 +52,7 @@ export default function AgeingReport() {
   const [route, setRoute] = useState('')
   const [master, setMaster] = useState('')
   const [splitGroups, setSplitGroups] = useState(false)
+  const [q, setQ] = useState('')
   const { masters } = useMasterGroups()
 
   const [parties, setParties] = useState<PartyRow[] | null>(null)
@@ -99,7 +100,12 @@ export default function AgeingReport() {
           (r) => !master || r.master_code === master)
       : parties
     if (!source) return null
+    const needle = q.trim().toLowerCase()
     return source.filter((p) => {
+      if (needle && !`${p.party_name} ${p.party_code} ${p.route_name}`
+            .toLowerCase().includes(needle)) {
+        return false
+      }
       if (route && p.route_name !== route) return false
       // "Overdue" means anything past the first bucket.
       if (overdueOnly && Number(p.b_16_30) + Number(p.b_31_45) + Number(p.b_46_plus) <= 0) {
@@ -107,7 +113,7 @@ export default function AgeingReport() {
       }
       return true
     })
-  }, [parties, pmRows, route, overdueOnly, useMaster, master])
+  }, [parties, pmRows, route, overdueOnly, useMaster, master, q])
 
   // With a group chosen, the route summary has to be rebuilt from the finer
   // rows — the stored one covers every group at once.
@@ -190,6 +196,17 @@ export default function AgeingReport() {
       </Check>
       {!byRoute && (
         <>
+          <span className="grow" style={{ minWidth: 180 }}>
+            <label className="sr-only" htmlFor="age-party">Find a customer</label>
+            <input
+              id="age-party"
+              type="search"
+              autoComplete="off"
+              placeholder="Find a customer"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </span>
           <select value={route} onChange={(e) => setRoute(e.target.value)} aria-label="Filter by route">
             <option value="">All routes</option>
             {routeNames.map((r) => (

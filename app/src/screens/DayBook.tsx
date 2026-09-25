@@ -76,6 +76,7 @@ export default function DayBook() {
   const [error, setError] = useState<string | null>(null)
   const [master, setMaster] = useState('')
   const [showOrders, setShowOrders] = useState(true)
+  const [byGroup, setByGroup] = useState(false)
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {
@@ -102,7 +103,7 @@ export default function DayBook() {
     void load()
   }, [load])
 
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     if (!entries) return null
     return entries.filter((r) => {
       // A payment belongs to no master group until somebody applies it to a
@@ -114,17 +115,58 @@ export default function DayBook() {
     })
   }, [entries, master, showOrders])
 
+  /**
+   * Chronological by default, because the day book's job is "what happened
+   * today, in the order it happened". Grouping is the other question — how did
+   * each side of the business do — and it is a different read of the same day,
+   * so it is a switch rather than a replacement.
+   *
+   * Within a group the entries stay in time order. A payment belongs to no
+   * group, so those sit together at the end under their own heading.
+   */
+  const rows = useMemo(() => {
+    if (!filtered) return null
+    if (!byGroup) return filtered
+    const rank = new Map(masters.map((m, i) => [m.code, i]))
+    return [...filtered].sort((a, b) => {
+      const ra = a.master_code === null ? 99 : (rank.get(a.master_code) ?? 98)
+      const rb = b.master_code === null ? 99 : (rank.get(b.master_code) ?? 98)
+      if (ra !== rb) return ra - rb
+      return a.created_at.localeCompare(b.created_at)
+    })
+  }, [filtered, byGroup, masters])
+
   // The tiles follow whatever filter is on, so they always describe the page.
   const shown = rows ?? []
+  const live = (type: string) =>
+    shown.filter((r) => r.doc_type === type && r.status !== 'CANCELLED')
   const sum = (type: string) =>
-    shown
-      .filter((r) => r.doc_type === type && r.status !== 'CANCELLED')
-      .reduce((s, r) => s + Number(r.amount || 0), 0)
+    live(type).reduce((s, r) => s + Number(r.amount || 0), 0)
 
   const sales = sum('BILL')
   const purchases = sum('PURCHASE')
   const receipts = sum('PAYMENT')
   const returns = sum('RETURN')
+
+  /** "Parle 12,500 · Current 7,000" for one kind of document. */
+  const splitOf = (type: string) => {
+    const rows = live(type)
+    const by = new Map<string, number>()
+    for (const r of rows) {
+      const k = r.master_name ?? 'Not grouped'
+      by.set(k, (by.get(k) ?? 0) + Number(r.amount || 0))
+    }
+    if (by.size < 2) return null
+    const order = masters.map((m) => m.name)
+    return [...by.entries()]
+      .sort((a, b) => {
+        const ia = order.indexOf(a[0])
+        const ib = order.indexOf(b[0])
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
+      })
+      .map(([name, value]) => `${name} ${fmtMoney(value)}`)
+      .join(' · ')
+  }
 
   const cols: ReportColumn<Entry>[] = [
     {
@@ -202,6 +244,9 @@ export default function DayBook() {
       <Check id="db-orders" checked={showOrders} onChange={setShowOrders}>
         Include orders
       </Check>
+      <Check id="db-group" checked={byGroup} onChange={setByGroup}>
+        Group together
+      </Check>
     </>
   )
 
@@ -215,6 +260,12 @@ export default function DayBook() {
             {shown.filter((r) => r.doc_type === 'BILL').length} bill
             {shown.filter((r) => r.doc_type === 'BILL').length === 1 ? '' : 's'}
             {returns > 0 ? ` · ${fmtMoney(returns)} returned` : ''}
+            {splitOf('BILL') && (
+              <>
+                <br />
+                {splitOf('BILL')}
+              </>
+            )}
           </p>
         </div>
         <div className="tile">
@@ -223,6 +274,12 @@ export default function DayBook() {
           <p>
             {shown.filter((r) => r.doc_type === 'PURCHASE').length} purchase
             {shown.filter((r) => r.doc_type === 'PURCHASE').length === 1 ? '' : 's'}
+            {splitOf('PURCHASE') && (
+              <>
+                <br />
+                {splitOf('PURCHASE')}
+              </>
+            )}
           </p>
         </div>
         <div className="tile">
