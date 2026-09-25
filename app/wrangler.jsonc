@@ -1,0 +1,36 @@
+{
+  // ===========================================================================
+  // How the app gets published.
+  //
+  // Cloudflare no longer offers "Pages" to new accounts; a static site is now
+  // a Worker that serves files. Same thing from the outside — a web address
+  // your reps open — but it needs this file, because a Worker will not guess.
+  //
+  // Two settings matter and both have a reason:
+  //
+  //   directory            where the built files are. `npm run build` puts
+  //                        them in dist, so that is what gets published.
+  //
+  //   not_found_handling   the app does its own routing in the browser. Open
+  //                        /invoices/abc-123 cold and there is no such file on
+  //                        disk, so without this the server would answer 404
+  //                        and a rep following a link would hit a dead page.
+  //                        "single-page-application" says: when nothing
+  //                        matches, send index.html and let the app sort it
+  //                        out. Cloudflare Pages did this by itself; a Worker
+  //                        has to be told, on purpose, so it can never happen
+  //                        by accident.
+  //
+  // The `name` below MUST match the Worker's name in the Cloudflare dashboard
+  // exactly, or the build fails with a message that does not explain why.
+  // ===========================================================================
+
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sales-app",
+  "compatibility_date": "2026-09-25",
+
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
