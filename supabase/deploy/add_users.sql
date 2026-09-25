@@ -54,9 +54,9 @@
 with people (email, full_name, role) as (
   values
     -- >>> EDIT FROM HERE <<<
-    ('ramesh@mundhara.local',   'Ramesh Yadav',   'REP'),
-    ('suresh@mundhara.local',   'Suresh Sah',     'REP'),
-    ('accounts@mundhara.local', 'Office Account', 'ACCOUNTS')
+    ('agarwalaashi6555@gmail.com',   'Aashi Mundhara',   'ACCOUNTS'),
+    ('gayatritradingcenter@gmail.com',   'Dipendra Mandal',     'ACCOUNTS'),
+    ('ramsevak@gmail.com', 'Ramsevak Yadav', 'REP')
     -- >>> TO HERE. Keep the commas between lines, none after the last. <<<
 )
 insert into public.app_user (id, full_name, role, is_active)
