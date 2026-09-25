@@ -3,6 +3,7 @@ import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { parseWorkbook, ENTITIES } from '../lib/workbook'
 import type { ImportReport, ParsedSheet } from '../lib/workbook'
 import { Banner, ErrorBanner, Spinner } from '../components/ui'
+import { fmtMoney } from '../lib/format'
 
 type Status = 'pending' | 'checking' | 'problems' | 'ready' | 'importing' | 'done' | 'blocked'
 
@@ -27,6 +28,15 @@ export default function Import() {
   const [error, setError] = useState<string | null>(null)
   const [finished, setFinished] = useState(false)
   const [openingPosted, setOpeningPosted] = useState<number | null>(null)
+  // The other half of go-live: the money customers already owed.
+  const [balancesPosted, setBalancesPosted] = useState<number | null>(null)
+  const [daysOld, setDaysOld] = useState('16')
+  const [balances, setBalances] = useState<{
+    waiting: number
+    waiting_value: number
+    posted: number
+    missing_date: number
+  } | null>(null)
   // Products carrying an opening quantity that has not reached the ledger yet.
   // Counted on its own, because opening stock is just as often typed into the
   // product form as imported from a workbook.
@@ -39,6 +49,9 @@ export default function Import() {
       .gt('opening_qty', 0)
       .eq('opening_locked', false)
     if (!error) setWaiting(count ?? 0)
+
+    const { data } = await supabase.from('v_opening_balance_status').select('*').single()
+    if (data) setBalances(data as typeof balances)
   }, [])
 
   useEffect(() => {
@@ -187,6 +200,22 @@ export default function Import() {
     setBusy(false)
     setFinished(!stopped)
   }, [states, existing])
+
+  const postBalances = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    const n = Number(daysOld)
+    if (!Number.isFinite(n) || n < 0) {
+      setError('Days must be a whole number, 0 or more.')
+      setBusy(false)
+      return
+    }
+    const { data, error } = await supabase.rpc('post_opening_balances', { p_days_old: n })
+    if (error) setError(friendlyMessage(error))
+    else setBalancesPosted(data as number)
+    setBusy(false)
+    await countWaiting()
+  }, [countWaiting, daysOld])
 
   const postOpening = useCallback(async () => {
     setBusy(true)
@@ -359,6 +388,77 @@ export default function Import() {
           <p className="hint" style={{ marginTop: 10 }}>
             Nothing is waiting. Every product with an opening quantity has been
             posted already.
+          </p>
+        )}
+      </div>
+
+      <div className="card card-pad" style={{ marginTop: 12 }}>
+        <h2>Post opening balances</h2>
+        <p className="sub" style={{ marginTop: 4, marginBottom: 14 }}>
+          Turns what each customer already owed into a document you can age and
+          settle. Until this is done an opening balance shows in the total but
+          cannot be paid off, because a payment is applied to a document.
+        </p>
+
+        {balances && balances.waiting > 0 && (
+          <Banner tone="warn">
+            {balances.waiting} customer{balances.waiting === 1 ? '' : 's'} carrying{' '}
+            <strong>{fmtMoney(balances.waiting_value)}</strong> that cannot be
+            settled yet.
+          </Banner>
+        )}
+
+        {balances && balances.missing_date > 0 && (
+          <Banner tone="bad">
+            {balances.missing_date} customer
+            {balances.missing_date === 1 ? ' has' : 's have'} an opening balance
+            with no date, so there is nothing to age it from. Add
+            opening_balance_date on the Parties sheet and import again with{' '}
+            <strong>Replace it with what the sheet says</strong>.
+          </Banner>
+        )}
+
+        <label className="inline-field" style={{ marginBottom: 12 }}>
+          <span>How old to treat them as</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={daysOld}
+            onChange={(e) => setDaysOld(e.target.value)}
+            style={{ width: 90 }}
+            disabled={busy}
+          />
+          <span className="muted">days</span>
+        </label>
+        <p className="hint" style={{ marginTop: 0, marginBottom: 14 }}>
+          An opening balance carries no bill date, so one is chosen: this many
+          days before the date the balance was struck. At 16 it lands in the
+          16–30 bucket today and ages normally from there, so old money never
+          looks fresher than last week&rsquo;s bill.
+        </p>
+
+        {balancesPosted === null ? (
+          <button
+            className="primary"
+            onClick={() => void postBalances()}
+            disabled={busy || (balances?.waiting ?? 0) === 0}
+          >
+            {busy ? <Spinner /> : 'Post opening balances'}
+          </button>
+        ) : (
+          <Banner tone="info">
+            {balancesPosted === 0
+              ? 'Nothing to post — every opening balance is already a document.'
+              : `Opening balances posted for ${balancesPosted} customer${balancesPosted === 1 ? '' : 's'}. They now appear in Bills, in ageing, and on the payment screen.`}
+          </Banner>
+        )}
+
+        {balances && balances.waiting === 0 && balancesPosted === null && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            {balances.posted > 0
+              ? `Nothing is waiting. ${balances.posted} customer${balances.posted === 1 ? '' : 's'} already posted.`
+              : 'No customer has an opening balance to post.'}
           </p>
         )}
       </div>

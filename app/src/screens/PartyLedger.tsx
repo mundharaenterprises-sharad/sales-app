@@ -59,6 +59,7 @@ interface OpenBill {
   invoice_id: string
   doc_no: string
   master_name: string | null
+  is_opening: boolean
   invoice_date: string
   effective_total: number
   settled: number
@@ -98,7 +99,7 @@ export default function PartyLedger() {
       supabase.from('v_ageing_by_party').select('*').eq('party_id', id).maybeSingle(),
       supabase
         .from('v_invoice_list')
-        .select('invoice_id, doc_no, master_name, invoice_date, effective_total, settled, outstanding, days_outstanding')
+        .select('invoice_id, doc_no, master_name, is_opening, invoice_date, effective_total, settled, outstanding, days_outstanding')
         .eq('party_id', id)
         .gt('outstanding', 0)
         .order('invoice_date'),
@@ -267,6 +268,7 @@ export default function PartyLedger() {
                   <tr key={b.invoice_id}>
                     <td className="primary-cell">
                       <Link to={`/invoices/${b.invoice_id}`} className="strong">{b.doc_no}</Link>
+                      {b.is_opening && <> <span className="pill flat">Opening</span></>}
                       <br />
                       <span className="muted" style={{ fontSize: 12.5 }}>{fmtDate(b.invoice_date)}</span>
                     </td>

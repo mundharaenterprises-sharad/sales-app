@@ -98,28 +98,37 @@ export default function InvoiceView() {
   const canCorrect =
     inv != null && inv.status === 'ACTIVE' && inv.invoice_date === today
 
+  // A balance brought forward is not a bill: nothing was sold, so there is
+  // nothing to print, correct or cancel. It can only be paid.
+  const opening = (inv as unknown as { is_opening?: boolean } | null)?.is_opening === true
+
   if (!inv && !error) return <Loading what="Loading bill" />
 
   return (
     <>
       <div className="page-head no-print">
-        <h1>Bill {inv?.doc_no}</h1>
+        <h1>{opening ? 'Opening balance' : `Bill ${inv?.doc_no ?? ''}`}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/invoices')}>All bills</button>
-          <button className="primary" onClick={() => window.print()} disabled={!inv}>
-            Print
-          </button>
+          {!opening && (
+            <button className="primary" onClick={() => window.print()} disabled={!inv}>
+              Print
+            </button>
+          )}
           {can('ACCOUNTS', 'ADMIN') && inv?.status !== 'CANCELLED' && (
-            <button onClick={() => nav(`/receipts/new?party=${invParty}&invoice=${inv!.id}`)}>
+            <button
+              className={opening ? 'primary' : undefined}
+              onClick={() => nav(`/receipts/new?party=${invParty}&invoice=${inv!.id}`)}
+            >
               Record payment
             </button>
           )}
-          {can('ACCOUNTS', 'ADMIN') && canCorrect && (
+          {can('ACCOUNTS', 'ADMIN') && canCorrect && !opening && (
             <button onClick={() => nav(`/invoices/new?revise=${inv!.id}`)} disabled={busy}>
               Correct bill
             </button>
           )}
-          {can('ACCOUNTS', 'ADMIN') && inv?.status !== 'CANCELLED' && (
+          {can('ACCOUNTS', 'ADMIN') && inv?.status !== 'CANCELLED' && !opening && (
             <button onClick={() => void cancel()} disabled={busy}>
               {busy ? <Spinner /> : 'Cancel bill'}
             </button>
@@ -169,7 +178,25 @@ export default function InvoiceView() {
         )}
       </div>
 
-      {inv && <BillSheet bill={inv} settings={settings} />}
+      {inv && opening ? (
+        <div className="card card-pad">
+          <h2>{inv.doc_no}</h2>
+          <p className="sub" style={{ marginTop: 4 }}>
+            What this customer owed when the app started. It is not a bill — no
+            goods were sold against it — so there is nothing to print. Settle it
+            with a payment like any other.
+          </p>
+          <div className="tiles" style={{ marginTop: 14 }}>
+            <div className="tile">
+              <h3>Amount brought forward</h3>
+              <div className="stat">{fmtMoney(inv.net_total)}</div>
+              <p>{inv.remarks ?? ''}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        inv && <BillSheet bill={inv} settings={settings} />
+      )}
 
       <p className="sub no-print" style={{ marginTop: 12 }}>
         <Link to="/invoices">Back to bills</Link>

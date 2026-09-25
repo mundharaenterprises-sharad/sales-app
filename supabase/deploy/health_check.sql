@@ -96,7 +96,14 @@ select * from (values
   ('025', 'import master groups',
                                  exists (select 1 from pg_proc
                                           where proname = 'import_masters'
-                                            and prosrc like '%master_code%'))
+                                            and prosrc like '%master_code%')),
+  ('026', 'opening balances as documents',
+                                 to_regprocedure('public.post_opening_balances(integer)') is not null
+                             and to_regclass('public.v_opening_balance_status') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_invoice'
+                                            and column_name = 'is_opening'))
 ) as m(version, what, present);
 
 insert into _health
@@ -121,7 +128,7 @@ select 1, 'tables', count(*)::text, '25', count(*) = 25
   from pg_tables where schemaname = 'public';
 
 insert into _health
-select 2, 'views', count(*)::text, '22 or more', count(*) >= 22
+select 2, 'views', count(*)::text, '23 or more', count(*) >= 23
   from pg_views where schemaname = 'public';
 
 insert into _health

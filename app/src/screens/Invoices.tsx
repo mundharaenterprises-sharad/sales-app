@@ -17,6 +17,7 @@ interface InvoiceRow {
   route_name: string
   master_code: string | null
   master_name: string | null
+  is_opening: boolean
   invoice_date: string
   net_total: number
   cancelled_value: number
@@ -50,6 +51,7 @@ export default function Invoices() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [showCancelled, setShowCancelled] = useState(true)
   const [master, setMaster] = useState('')
+  const [showOpening, setShowOpening] = useState(true)
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {
@@ -85,6 +87,7 @@ export default function Invoices() {
       if (unpaidOnly && Number(r.outstanding) <= 0) return false
       if (route && r.route_name !== route) return false
       if (master && r.master_code !== master) return false
+      if (!showOpening && r.is_opening) return false
       // Dates are plain YYYY-MM-DD, so comparing them as text is comparing them
       // as dates, with no timezone to get wrong.
       if (from && r.invoice_date < from) return false
@@ -94,7 +97,7 @@ export default function Invoices() {
         .toLowerCase()
         .includes(needle)
     })
-  }, [rows, q, unpaidOnly, route, from, to, showCancelled, master])
+  }, [rows, q, unpaidOnly, route, from, to, showCancelled, master, showOpening])
 
   const toggle = (id: string) =>
     setPicked((s) => {
@@ -104,7 +107,7 @@ export default function Invoices() {
       return next
     })
 
-  const printable = filtered.filter((r) => r.status !== 'CANCELLED')
+  const printable = filtered.filter((r) => r.status !== 'CANCELLED' && !r.is_opening)
   const allShownPicked =
     printable.length > 0 && printable.every((r) => picked.has(r.invoice_id))
 
@@ -174,6 +177,9 @@ export default function Invoices() {
             <Check id="cancelled" checked={showCancelled} onChange={setShowCancelled}>
               Show cancelled
             </Check>
+            <Check id="opening" checked={showOpening} onChange={setShowOpening}>
+              Show opening balances
+            </Check>
           </div>
 
           <div className="toolbar">
@@ -193,7 +199,8 @@ export default function Invoices() {
             >
               Today
             </button>
-            {(from || to || route || master || q || unpaidOnly || !showCancelled) && (
+            {(from || to || route || master || q || unpaidOnly || !showCancelled
+              || !showOpening) && (
               <button
                 className="ghost"
                 onClick={() => {
@@ -204,6 +211,7 @@ export default function Invoices() {
                   setQ('')
                   setUnpaidOnly(false)
                   setShowCancelled(true)
+                  setShowOpening(true)
                 }}
               >
                 Clear
@@ -233,11 +241,7 @@ export default function Invoices() {
                       onChange={(e) =>
                         setPicked(
                           e.target.checked
-                            ? new Set(
-                                filtered
-                                  .filter((r) => r.status !== 'CANCELLED')
-                                  .map((r) => r.invoice_id),
-                              )
+                            ? new Set(printable.map((r) => r.invoice_id))
                             : new Set(),
                         )
                       }
@@ -266,12 +270,14 @@ export default function Invoices() {
                     }
                   >
                     <td data-label="Print">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${r.doc_no}`}
-                        checked={picked.has(r.invoice_id)}
-                        onChange={() => toggle(r.invoice_id)}
-                      />
+                      {!r.is_opening && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${r.doc_no}`}
+                          checked={picked.has(r.invoice_id)}
+                          onChange={() => toggle(r.invoice_id)}
+                        />
+                      )}
                     </td>
                     <td className="primary-cell">
                       <Link to={`/invoices/${r.invoice_id}`} className="strong">
@@ -281,6 +287,7 @@ export default function Invoices() {
                       <span className="muted" style={{ fontSize: 12.5 }}>
                         {fmtDate(r.invoice_date)}
                       </span>
+                      {r.is_opening && <> <span className="pill flat">Opening</span></>}
                       {r.status !== 'ACTIVE' && (
                         <> <span className="pill bad">{LABEL[r.status] ?? r.status}</span></>
                       )}
