@@ -2,20 +2,21 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
-import type { Bill, BusinessSetting } from '../components/BillSheet'
+import type { Bill } from '../components/BillSheet'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
+import { usePrintPage, BILL_PAGE } from '../lib/printpage'
 
 /**
  * Several bills as one print job: one bill per A5 sheet, one trip to the
  * printer. The office bills a rep's round in the morning and prints the lot.
  */
 export default function InvoicePrintBatch() {
+  usePrintPage(BILL_PAGE)
   const [params] = useSearchParams()
   const nav = useNavigate()
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean)
 
   const [bills, setBills] = useState<Bill[] | null>(null)
-  const [settings, setSettings] = useState<BusinessSetting | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -26,13 +27,7 @@ export default function InvoicePrintBatch() {
         setBills([])
         return
       }
-      const [i, s] = await Promise.all([
-        supabase.from('sales_invoice').select(BILL_SELECT).in('id', ids),
-        supabase
-          .from('app_setting')
-          .select('business_name, business_address, business_phone')
-          .single(),
-      ])
+      const i = await supabase.from('sales_invoice').select(BILL_SELECT).in('id', ids)
       if (!alive) return
       if (i.error) {
         setError(friendlyMessage(i.error))
@@ -44,7 +39,6 @@ export default function InvoicePrintBatch() {
       // hands back, so the pile matches the list on screen.
       rows.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
       setBills(rows)
-      if (!s.error) setSettings(s.data as BusinessSetting)
     }
 
     void load()
@@ -86,7 +80,7 @@ export default function InvoicePrintBatch() {
       ) : (
         <div className="print-stack">
           {bills?.map((b, i) => (
-            <BillSheet key={b.id} bill={b} settings={settings} pageBreak={i > 0} />
+            <BillSheet key={b.id} bill={b} pageBreak={i > 0} />
           ))}
         </div>
       )}

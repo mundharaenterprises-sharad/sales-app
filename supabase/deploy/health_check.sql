@@ -224,13 +224,11 @@ select 10, 'stock reconciliation',
        count(*)::text || ' product(s) drifted', '0 drifted', count(*) = 0
   from public.v_stock_reconciliation;
 
-insert into _health
-select 11, 'business name',
-       case when business_name = 'My Business' then 'still the default'
-            else business_name end,
-       'your business name',
-       business_name <> 'My Business'
-  from public.app_setting;
+-- The business name is deliberately NOT checked. Bills carry the words
+-- "Estimate Bill" rather than the firm's name, by Sharad's instruction, so
+-- app_setting.business_name is not printed anywhere and whatever it holds
+-- cannot reach a customer. A check on something nobody sees is a check that
+-- fails for no reason, and a health check that cries wolf gets ignored.
 
 -- -----------------------------------------------------------------------------
 

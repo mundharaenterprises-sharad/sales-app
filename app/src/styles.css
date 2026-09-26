@@ -575,7 +575,12 @@ table.data tr.inactive td { opacity: .6; }
 }
 
 .bill-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; }
-.bill-business { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+.bill-business { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.bill-cancelled {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  color: var(--bad); border: 1.5px solid var(--bad);
+  padding: 1px 6px; display: inline-block; margin-bottom: 3px;
+}
 .bill-meta { text-align: right; }
 .bill-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
 
@@ -613,9 +618,13 @@ table.bill-lines .small { font-size: 9px; }
 .bill-foot .sign { border-top: 1px solid var(--line-2); padding-top: 4px; min-width: 45mm; text-align: center; }
 
 @media print {
-  /* A5, portrait. Anything that is not the bill goes. */
-  @page { size: A5 portrait; margin: 8mm; }
-
+  /*
+    The paper size is NOT set here. @page belongs to the document, not to a
+    selector, so a second @page further down this file would silently take
+    over the bill — which is exactly what happened when reports arrived and
+    bills started coming out of the printer sideways. Each screen now declares
+    its own page through usePrintPage() in lib/printpage.ts.
+  */
   .topbar, .nav, .no-print, .banner { display: none !important; }
   body, .app, main { background: #fff; }
   main { padding: 0; max-width: none; }
@@ -623,10 +632,24 @@ table.bill-lines .small { font-size: 9px; }
   .sheet-a5 {
     border: none; box-shadow: none; border-radius: 0; padding: 0;
     max-width: none; width: auto; color: #000;
+    /* Points, not pixels: paper has no pixels. 9.5pt is an ordinary invoice
+       body size, and twenty lines still fit on one A5 sheet. */
+    font-size: 9.5pt;
+    line-height: 1.35;
   }
   .sheet-a5 .muted, .bill-title, .bill-foot { color: #444; }
-  table.bill-lines th { border-bottom: 1px solid #000; }
-  table.bill-lines td { border-bottom: 1px solid #ddd; }
+  .bill-business { font-size: 15pt; }
+  .bill-title { font-size: 8.5pt; }
+  /* A mono printer turns red into a grey nobody notices. The box is what
+     carries it, so the box has to be black. */
+  .bill-cancelled { font-size: 9pt; color: #000; border-color: #000; }
+  .bill-party .muted { font-size: 7.5pt; }
+  table.bill-lines th { border-bottom: 1px solid #000; font-size: 8pt; }
+  table.bill-lines td { border-bottom: 1px solid #ddd; padding: 4px 3px; }
+  table.bill-lines .small { font-size: 8pt; }
+  .bill-totals .grand { font-size: 12pt; }
+  .bill-remarks { font-size: 9pt; }
+  .bill-foot { font-size: 8pt; }
   table.bill-lines tr { break-inside: avoid; }
 }
 
@@ -657,7 +680,7 @@ table.data tr.active-row td { background: var(--navy-100); box-shadow: inset 3px
 
 @media print {
   .print-only { display: block; }
-  @page { size: A4 landscape; margin: 10mm; }
+  /* Paper size lives in usePrintPage() — see the note above .sheet-a5. */
 
   .report-stamp {
     font-size: 12px; font-weight: 650; margin-bottom: 8px; color: #000;

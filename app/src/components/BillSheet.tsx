@@ -7,12 +7,6 @@ import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
  * run of fifteen is the same document as one printed on its own.
  */
 
-export interface BusinessSetting {
-  business_name: string
-  business_address: string | null
-  business_phone: string | null
-}
-
 export interface BillLineRow {
   id: string
   line_no: number
@@ -62,11 +56,9 @@ export const BILL_SELECT =
 
 export function BillSheet({
   bill,
-  settings,
   pageBreak = false,
 }: {
   bill: Bill
-  settings: BusinessSetting | null
   /** In a batch, every bill starts a new sheet of paper. */
   pageBreak?: boolean
 }) {
@@ -76,14 +68,17 @@ export function BillSheet({
     <div className={`sheet-a5${pageBreak ? ' page-break' : ''}`}>
       <div className="bill-head">
         <div>
-          <div className="bill-business">{settings?.business_name ?? ''}</div>
-          {settings?.business_address && <div>{settings.business_address}</div>}
-          {settings?.business_phone && <div>Phone {settings.business_phone}</div>}
+          {/*
+            The firm's name is deliberately not on this document, by Sharad's
+            instruction. What the paper has to say is what kind of paper it is,
+            so that is what stands at the top of it.
+          */}
+          <div className="bill-business">Estimate Bill</div>
         </div>
         <div className="bill-meta">
-          <div className="bill-title">
-            {bill.status === 'CANCELLED' ? 'CANCELLED BILL' : 'BILL'}
-          </div>
+          {bill.status === 'CANCELLED' && (
+            <div className="bill-cancelled">CANCELLED</div>
+          )}
           <div><strong>{bill.doc_no}</strong></div>
           <div>{fmtDate(bill.invoice_date)}</div>
           {bill.order && <div>Order {bill.order.doc_no}</div>}

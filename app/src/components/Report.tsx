@@ -3,6 +3,7 @@ import { fmtMoney, fmtQty } from '../lib/format'
 import { downloadXlsx } from '../lib/xlsx'
 import type { CellType } from '../lib/xlsx'
 import { Empty, ErrorBanner, Loading } from './ui'
+import { usePrintPage, REPORT_PAGE } from '../lib/printpage'
 
 /**
  * One definition, two outputs.
@@ -51,6 +52,7 @@ export function Report<T>({
   fileName: string
   footer?: ReactNode
 }) {
+  usePrintPage(REPORT_PAGE, '10mm')
   const today = new Date().toISOString().slice(0, 10)
 
   const exportExcel = () => {

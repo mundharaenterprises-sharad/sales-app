@@ -4,8 +4,9 @@ import { supabase, friendlyMessage } from '../lib/supabase'
 import { fmtMoney } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
-import type { Bill, BusinessSetting } from '../components/BillSheet'
+import type { Bill } from '../components/BillSheet'
 import { useSession } from '../lib/session'
+import { usePrintPage, BILL_PAGE } from '../lib/printpage'
 
 /**
  * One bill, laid out as it prints.
@@ -16,6 +17,7 @@ import { useSession } from '../lib/session'
  * be trusted to match the original.
  */
 export default function InvoiceView() {
+  usePrintPage(BILL_PAGE)
   const { id } = useParams()
   const nav = useNavigate()
   const { can } = useSession()
@@ -32,18 +34,13 @@ export default function InvoiceView() {
     replaced_by_invoice_id: string | null
     replaces_invoice_id: string | null
   } | null>(null)
-  const [settings, setSettings] = useState<BusinessSetting | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
-    const [i, s, l] = await Promise.all([
+    const [i, l] = await Promise.all([
       supabase.from('sales_invoice').select(BILL_SELECT).eq('id', id).single(),
-      supabase
-        .from('app_setting')
-        .select('business_name, business_address, business_phone')
-        .single(),
       supabase
         .from('v_invoice_list')
         .select(
@@ -58,7 +55,6 @@ export default function InvoiceView() {
       return
     }
     setInv(i.data as unknown as Bill)
-    if (!s.error) setSettings(s.data as BusinessSetting)
     if (!l.error) setLink(l.data as typeof link)
   }, [id])
 
@@ -195,7 +191,7 @@ export default function InvoiceView() {
           </div>
         </div>
       ) : (
-        inv && <BillSheet bill={inv} settings={settings} />
+        inv && <BillSheet bill={inv} />
       )}
 
       <p className="sub no-print" style={{ marginTop: 12 }}>

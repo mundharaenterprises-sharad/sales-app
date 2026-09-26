@@ -68,7 +68,7 @@ on conflict (id) do update
 -- -----------------------------------------------------------------------------
 
 update public.app_setting
-   set business_name    = 'Mundhara Enterprises',   -- <<< as it should print
+   set business_name    = 'Mundhara Enterprises',   -- not printed; bills say "Estimate Bill"
        business_address = null,                     -- <<< street, city
        business_phone   = null                      -- <<< phone for the invoice
  where id;
