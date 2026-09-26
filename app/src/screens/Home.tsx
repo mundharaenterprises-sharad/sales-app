@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useSession } from '../lib/session'
 import { fmtQty } from '../lib/format'
 import { Loading } from '../components/ui'
+import { onUpdateWaiting, applyUpdate, checkForUpdate, buildLabel } from '../lib/updates'
 
 interface Counts {
   products: number
@@ -14,6 +15,10 @@ interface Counts {
 export default function Home() {
   const { user } = useSession()
   const [counts, setCounts] = useState<Counts | null>(null)
+  const [updateReady, setUpdateReady] = useState(false)
+  const [checked, setChecked] = useState(false)
+
+  useEffect(() => onUpdateWaiting(setUpdateReady), [])
 
   useEffect(() => {
     let alive = true
@@ -75,6 +80,37 @@ export default function Home() {
           </Link>
         </div>
       )}
+
+      {/*
+        A version on the screen turns "the change didn't come through" from a
+        guess into something two people can check against each other.
+      */}
+      <div className="build-line no-print">
+        {updateReady ? (
+          <>
+            <strong>A newer version is ready.</strong>{' '}
+            <button type="button" className="linkish" onClick={applyUpdate}>
+              Load it now
+            </button>
+          </>
+        ) : (
+          <>
+            Version of {buildLabel()} ·{' '}
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => {
+                checkForUpdate()
+                setChecked(true)
+                window.setTimeout(() => setChecked(false), 4000)
+              }}
+            >
+              Check for a newer one
+            </button>
+            {checked && ' · checking…'}
+          </>
+        )}
+      </div>
     </>
   )
 }

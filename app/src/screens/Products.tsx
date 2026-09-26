@@ -35,6 +35,8 @@ interface GroupRow {
   code: string
   name: string
   is_active: boolean
+  /** Parle, Current or Others — a product inherits it through its group. */
+  master: { code: string; name: string } | null
 }
 
 const CACHE_KEY = 'products'
@@ -69,7 +71,10 @@ export default function Products() {
     setError(null)
     const [p, g] = await Promise.all([
       supabase.from('v_product_master').select('*').order('name'),
-      supabase.from('product_group').select('id, code, name, is_active').order('name'),
+      supabase
+        .from('product_group')
+        .select('id, code, name, is_active, master:master_group_id (code, name)')
+        .order('name'),
     ])
     if (p.error || g.error) {
       setError(friendlyMessage(p.error ?? g.error))
@@ -77,7 +82,7 @@ export default function Products() {
     }
     const list = (p.data ?? []) as ProductRow[]
     setRows(list)
-    setGroups((g.data ?? []) as GroupRow[])
+    setGroups((g.data ?? []) as unknown as GroupRow[])
     setFetchedAt(Date.now())
     setFromCache(false)
     void putSnapshot(CACHE_KEY, list)
@@ -347,6 +352,10 @@ function ProductForm({
 
   const groupOptions = groups.filter((g) => g.is_active || g.id === p?.group_id)
 
+  /** The master group the chosen product group belongs to, for the hint. */
+  const chosenMaster =
+    groups.find((g) => g.id === f.group_id)?.master?.name ?? null
+
   async function save() {
     setError(null)
     const problems: string[] = []
@@ -440,12 +449,22 @@ function ProductForm({
           <input id="pr-code" type="text" value={f.code} disabled={!isNew || ro}
                  onChange={(e) => set('code', e.target.value)} />
         </Field>
-        <Field label="Group" htmlFor="pr-group">
+        <Field
+          label="Group"
+          htmlFor="pr-group"
+          hint={
+            chosenMaster
+              ? `A ${chosenMaster} product — that follows the group, so there is nothing else to pick.`
+              : 'Parle or Current follows from the group you choose here.'
+          }
+        >
           <select id="pr-group" value={f.group_id} disabled={ro}
                   onChange={(e) => set('group_id', e.target.value)}>
             <option value="">Choose a group</option>
             {groupOptions.map((g) => (
-              <option key={g.id} value={g.id}>{g.name} ({g.code})</option>
+              <option key={g.id} value={g.id}>
+                {g.name} ({g.code}){g.master ? ` · ${g.master.name}` : ''}
+              </option>
             ))}
           </select>
         </Field>
