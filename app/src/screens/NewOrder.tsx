@@ -1,11 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
 import { fmtMoney, fmtQty, fmtAge } from '../lib/format'
-import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
+import { Banner, ErrorBanner, Loading } from '../components/ui'
 import { Picker } from '../components/Picker'
 import { useOnline } from '../lib/session'
+import {
+  saveOrder,
+  keepDraft,
+  takeKeptDraft,
+  forgetDraft,
+  reclaimDraft,
+  worthSaving,
+  unchanged,
+  watchForSignal,
+  type OrderDraft,
+} from '../lib/ordersave'
 
 interface PartyRow {
   party_id: string
@@ -40,22 +51,14 @@ interface Line {
   discPct: string
 }
 
-/** One short entry from the SA001 payload. */
-interface Shortfall {
-  product_id: string
-  product_code: string
-  product_name: string
-  base_uom: string
-  requested: number
-  available: number
-}
-
 const PARTY_CACHE = 'parties'
 const PRODUCT_CACHE = 'stock'
 
 export default function NewOrder() {
   const nav = useNavigate()
   const online = useOnline()
+  /** Present when an existing order is being changed rather than a new one taken. */
+  const { id: editId } = useParams()
 
   const [parties, setParties] = useState<PartyRow[] | null>(null)
   const [products, setProducts] = useState<ProductRow[] | null>(null)
@@ -65,11 +68,33 @@ export default function NewOrder() {
   const [party, setParty] = useState<PartyRow | null>(null)
   const [lines, setLines] = useState<Line[]>([])
   const [remarks, setRemarks] = useState('')
+  const [orderDisc, setOrderDisc] = useState('')
+  const [discMode, setDiscMode] = useState<'AMOUNT' | 'PCT'>('PCT')
 
   const [picking, setPicking] = useState<'party' | 'product' | null>(null)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [shortfalls, setShortfalls] = useState<Shortfall[] | null>(null)
+
+  /** The order being edited, and what it looked like before, so Undo can work. */
+  const [docNo, setDocNo] = useState<string | null>(null)
+  const [original, setOriginal] = useState<OrderDraft | null>(null)
+  const [loadingOrder, setLoadingOrder] = useState(!!editId)
+  /** Set when a draft this device had kept was put back on the screen. */
+  const [restored, setRestored] = useState(false)
+
+  /**
+   * Whatever was left over from last time, claimed on the first render.
+   *
+   * It has to happen here rather than in the effect that fills the screen,
+   * because that one waits for the customer and stock lists to arrive and by
+   * then this screen has already written its own empty state over the device
+   * copy. Read it before anything can overwrite it; apply it once there are
+   * products to hang it on.
+   */
+  const [leftOver] = useState<OrderDraft | null>(() =>
+    editId ? null : reclaimDraft() ?? takeKeptDraft(),
+  )
+  /** Nothing is written back to the device until the screen is filled in. */
+  const [settled, setSettled] = useState(false)
 
   // ---------------------------------------------------------------------------
 
@@ -152,6 +177,116 @@ export default function NewOrder() {
     return () => { alive = false }
   }, [])
 
+  /**
+   * Fill the screen: either an order being changed, or a draft this device
+   * kept from a session that ended badly.
+   *
+   * Both need the product list first — a line is only meaningful here with the
+   * stock figures and pack sizes beside it — so this waits for the loader
+   * above rather than racing it.
+   */
+  useEffect(() => {
+    if (!products || !parties) return
+    let alive = true
+
+    async function fill() {
+      // An order the rep asked to change.
+      if (editId) {
+        const [head, ls] = await Promise.all([
+          supabase.from('v_order_for_edit').select('*').eq('order_id', editId).maybeSingle(),
+          supabase
+            .from('sales_order_line')
+            .select('product_id, uom, qty, rate, line_discount_pct')
+            .eq('order_id', editId)
+            .order('line_no'),
+        ])
+        if (!alive) return
+
+        if (head.error || !head.data) {
+          setError(head.error ? friendlyMessage(head.error) : 'That order no longer exists.')
+          setLoadingOrder(false)
+          return
+        }
+
+        const h = head.data as {
+          doc_no: string
+          party_id: string
+          remarks: string | null
+          bill_discount_pct: number | null
+          bill_discount_amount: number | null
+          is_editable: boolean
+        }
+
+        if (!h.is_editable) {
+          setError('This order has been billed or cancelled, so it can no longer be changed.')
+          setLoadingOrder(false)
+          return
+        }
+
+        const p = (parties ?? []).find((x) => x.party_id === h.party_id) ?? null
+        const restoredLines: Line[] = ((ls.data ?? []) as {
+          product_id: string
+          uom: 'BASE' | 'PACK'
+          qty: number
+          rate: number
+          line_discount_pct: number | null
+        }[])
+          .map((r) => {
+            const prod = (products ?? []).find((x) => x.product_id === r.product_id)
+            if (!prod) return null
+            return {
+              product: prod,
+              uom: r.uom,
+              qty: String(r.qty),
+              rate: String(r.rate),
+              discPct: r.line_discount_pct ? String(r.line_discount_pct) : '',
+            } as Line
+          })
+          .filter((l): l is Line => l !== null)
+
+        const pct = h.bill_discount_pct
+        const amt = h.bill_discount_amount
+
+        setParty(p)
+        setLines(restoredLines)
+        setRemarks(h.remarks ?? '')
+        setDocNo(h.doc_no)
+        setDiscMode(pct != null ? 'PCT' : 'AMOUNT')
+        setOrderDisc(pct != null ? String(pct) : amt ? String(amt) : '')
+        setSettled(true)
+        setOriginal({
+          orderId: editId,
+          docNo: h.doc_no,
+          party: p,
+          lines: restoredLines,
+          remarks: h.remarks ?? '',
+          orderDisc: pct != null ? String(pct) : amt ? String(amt) : '',
+          discMode: pct != null ? 'PCT' : 'AMOUNT',
+        })
+        setLoadingOrder(false)
+        return
+      }
+
+      // A new order: whatever was claimed on the first render, if anything.
+      if (!alive) return
+      if (leftOver && !leftOver.orderId) {
+        setParty((leftOver.party as PartyRow) ?? null)
+        setLines(leftOver.lines as Line[])
+        setRemarks(leftOver.remarks)
+        setOrderDisc(leftOver.orderDisc)
+        setDiscMode(leftOver.discMode)
+        setRestored(true)
+      }
+      setSettled(true)
+    }
+
+    void fill()
+    return () => { alive = false }
+    // Deliberately runs once the lists are in, and not again: re-running would
+    // throw away whatever the rep has typed since.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId, products !== null, parties !== null])
+
   // ---------------------------------------------------------------------------
 
   const addProduct = useCallback((p: ProductRow) => {
@@ -193,9 +328,6 @@ export default function NewOrder() {
 
   const qtyBase = (l: Line) =>
     (Number(l.qty) || 0) * (l.uom === 'PACK' ? Number(l.product.pack_size) : 1)
-
-  const [orderDisc, setOrderDisc] = useState('')
-  const [discMode, setDiscMode] = useState<'AMOUNT' | 'PCT'>('PCT')
 
   const lineGross = (l: Line) => (Number(l.qty) || 0) * (Number(l.rate) || 0)
 
@@ -255,100 +387,90 @@ export default function NewOrder() {
     return out
   }, [lines, orderDiscValue, afterLines])
 
-  const canSubmit = !!party && lines.length > 0 && problems.length === 0 && !busy && online
+  /** Whether leaving now would save anything. Mirrors worthSaving(). */
+  const readyToSave = !!party && lines.some((l) => Number(l.qty) > 0)
 
   // ---------------------------------------------------------------------------
 
-  const submit = useCallback(async () => {
-    if (!party) return
-    setBusy(true)
-    setError(null)
-    setShortfalls(null)
+  /** Everything the screen is holding, in the shape the saver understands. */
+  const draft: OrderDraft = useMemo(
+    () => ({
+      orderId: editId,
+      docNo: docNo ?? undefined,
+      party,
+      lines,
+      remarks,
+      orderDisc,
+      discMode,
+      original: original ?? undefined,
+    }),
+    [editId, docNo, party, lines, remarks, orderDisc, discMode, original],
+  )
 
-    const payload = lines.map((l) => ({
-      product_id: l.product.product_id,
-      uom: l.uom,
-      qty: Number(l.qty),
-      rate: Number(l.rate),
-      line_discount_pct: Number(l.discPct) > 0 ? Number(l.discPct) : null,
-    }))
+  /**
+   * The unmount handler reads this rather than closing over state, because a
+   * cleanup function keeps the values it was created with and the whole job
+   * here is to save what the screen ended up holding, not what it held when
+   * the effect last ran.
+   */
+  const draftRef = useRef(draft)
+  draftRef.current = draft
 
-    const { data, error } = await supabase.rpc('create_sales_order', {
-      p_party_id: party.party_id,
-      p_order_date: new Date().toISOString().slice(0, 10),
-      p_lines: payload,
-      p_remarks: remarks.trim() || null,
-      p_bill_discount_amount: discMode === 'AMOUNT' ? Number(orderDisc) || 0 : 0,
-      p_bill_discount_pct: discMode === 'PCT' ? Number(orderDisc) || null : null,
-    })
+  const settledRef = useRef(settled)
+  settledRef.current = settled
 
-    if (error) {
-      const de = asDbError(error)
-      if (de.code === 'SA001' && Array.isArray(de.details)) {
-        // Somebody else took the stock between this screen loading and now.
-        setShortfalls(de.details as Shortfall[])
-      } else {
-        setError(friendlyMessage(error))
-      }
-      setBusy(false)
-      return
+  // Kept on this device as it is typed, so a phone that dies mid-order can
+  // give it back. Cleared by a successful save.
+  useEffect(() => {
+    if (!settled) return
+    keepDraft(draft)
+  }, [draft, settled])
+
+  useEffect(() => { watchForSignal() }, [])
+
+  /**
+   * Leaving the screen is what saves the order.
+   *
+   * Every way out lands here — the phone's back button, a tab in the nav, a
+   * link — because they all unmount this screen, and none of them can be
+   * relied on individually. Nothing is sent when there is no customer or
+   * nothing to sell: opening the screen to look up a price and backing out
+   * must cost nothing.
+   */
+  /** Set when the rep says to throw the order away, so leaving saves nothing. */
+  const abandoned = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      if (abandoned.current || !settledRef.current) return
+      const d = draftRef.current
+      if (!worthSaving(d)) return
+      // An order opened, looked at and left alone is not a change. Sending it
+      // anyway would rebuild its lines and re-reserve its stock for nothing.
+      if (d.orderId && unchanged(d)) return
+      void saveOrder(d)
     }
+  }, [])
 
-    const res = data as { order_id: string; doc_no: string }
-    nav('/orders', { replace: true, state: { justCreated: res.doc_no } })
-    // orderDisc and discMode belong here: without them submit keeps the copy
-    // it was built with, and an order saves with no discount however much the
-    // screen says otherwise.
-  }, [party, lines, remarks, orderDisc, discMode, nav])
-
-  /** Apply the shortfall, then let the rep resubmit as one atomic attempt. */
-  const applyShortfall = (s: Shortfall, action: 'reduce' | 'remove') => {
-    setLines((ls) => {
-      const i = ls.findIndex((l) => l.product.product_id === s.product_id)
-      if (i < 0) return ls
-      if (action === 'remove') return ls.filter((_, j) => j !== i)
-
-      const next = [...ls]
-      const l = next[i]
-      const pack = Number(l.product.pack_size)
-      // Keep the screen's own availability figure honest.
-      const product = { ...l.product, available: s.available }
-
-      if (l.uom === 'PACK' && s.available < pack) {
-        // What is left will not fill a single pack. Reducing by packs would
-        // round down to zero and silently drop the line, so switch the line to
-        // base units and take what there is.
-        next[i] = {
-          ...l,
-          product,
-          uom: 'BASE',
-          qty: String(s.available),
-          rate: String(l.product.sale_rate),
-        }
-      } else {
-        // The figure from the database is in base units; express it in whatever
-        // unit the rep is working in.
-        const per = l.uom === 'PACK' ? pack : 1
-        const newQty = l.uom === 'PACK' ? Math.floor(s.available / per) : s.available
-        next[i] = { ...l, product, qty: String(newQty) }
-      }
-
-      return next.filter((x) => Number(x.qty) > 0)
-    })
-    setShortfalls((ss) => {
-      const left = (ss ?? []).filter((x) => x.product_id !== s.product_id)
-      return left.length > 0 ? left : null
-    })
-  }
+  /**
+   * The way out that saves nothing. Without a Submit button there has to be
+   * one, or an order added by mistake can only be undone after it exists.
+   */
+  const discard = useCallback(() => {
+    abandoned.current = true
+    forgetDraft()
+    nav(editId ? '/orders' : '/orders', { replace: true })
+  }, [nav, editId])
 
   // ---------------------------------------------------------------------------
 
   if (parties === null || products === null) return <Loading what="Loading customers and stock" />
+  if (loadingOrder) return <Loading what="Loading the order" />
 
   return (
     <>
       <div className="page-head">
-        <h1>New order</h1>
+        <h1>{editId ? `Change ${docNo ?? 'order'}` : 'New order'}</h1>
         {dataAge && (
           <span className="sub">
             {stale ? 'Saved on this device ' : 'Stock as of '}
@@ -359,11 +481,19 @@ export default function NewOrder() {
 
       <ErrorBanner error={error} />
 
+      {restored && (
+        <Banner tone="info">
+          <strong>Picked up where you left off.</strong> This order was still on
+          this phone from last time. Carry on, or remove the items you do not
+          want.
+        </Banner>
+      )}
+
       {!online && (
-        <Banner tone="bad">
-          <strong>You are offline.</strong> An order cannot be submitted without a
-          connection, because the stock it reserves has to be checked as you send
-          it. You can still build the order here and send it when you have signal.
+        <Banner tone="warn">
+          <strong>You are offline.</strong> Write the order as usual. It is kept on
+          this phone and goes as soon as you have signal — the stock it needs can
+          only be checked when it reaches the office.
         </Banner>
       )}
 
@@ -568,14 +698,33 @@ export default function NewOrder() {
               </div>
             )}
           </div>
-          <button
-            className="primary"
-            style={{ marginLeft: 'auto' }}
-            onClick={() => void submit()}
-            disabled={!canSubmit}
-          >
-            {busy ? <Spinner /> : 'Submit order'}
-          </button>
+
+          {/*
+            There is no Submit button. Going back is what saves the order, and
+            a screen that does something on the way out has to say so where the
+            button used to be — otherwise the rep is left wondering, and wonders
+            by tapping things.
+          */}
+          <div className="save-note" style={{ marginLeft: 'auto' }}>
+            {readyToSave ? (
+              <>
+                <strong>Go back and this is saved.</strong>
+                <div className="sub">
+                  {editId
+                    ? 'The change goes through as you leave the screen.'
+                    : 'The order goes through as you leave the screen. You can undo it straight after.'}
+                </div>
+              </>
+            ) : (
+              <>
+                <strong>Nothing to save yet.</strong>
+                <div className="sub">
+                  {party ? 'Add an item.' : 'Choose a customer and add an item.'} Leaving
+                  now saves nothing.
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {problems.length > 0 && (
@@ -584,6 +733,14 @@ export default function NewOrder() {
               <div key={i}>{p}</div>
             ))}
           </Banner>
+        )}
+
+        {(editId || readyToSave) && (
+          <div style={{ marginTop: 12 }}>
+            <button className="ghost" onClick={discard}>
+              {editId ? 'Leave without changing anything' : 'Throw this order away'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -640,75 +797,6 @@ export default function NewOrder() {
           )}
         />
       )}
-
-      {/* --- Stock conflict ------------------------------------------------ */}
-      {shortfalls && (
-        <ShortfallDialog
-          shortfalls={shortfalls}
-          onApply={applyShortfall}
-          onCancelOrder={() => { setShortfalls(null); setLines([]) }}
-          onClose={() => setShortfalls(null)}
-        />
-      )}
     </>
-  )
-}
-
-/**
- * Shown when the order was refused because the stock went while the rep was
- * typing. The order was not partly submitted — nothing was taken — so this is
- * about getting to a set of lines that will go through on the next attempt.
- */
-function ShortfallDialog({
-  shortfalls,
-  onApply,
-  onCancelOrder,
-  onClose,
-}: {
-  shortfalls: Shortfall[]
-  onApply: (s: Shortfall, action: 'reduce' | 'remove') => void
-  onCancelOrder: () => void
-  onClose: () => void
-}) {
-  return (
-    <div className="sheet-backdrop">
-      <div className="sheet sheet-dialog" role="alertdialog" aria-modal="true">
-        <div className="sheet-head">
-          <h2>Not enough stock</h2>
-        </div>
-
-        <div className="sheet-body" style={{ padding: 16 }}>
-          <p style={{ marginTop: 0 }}>
-            Someone else took this stock while you were writing the order.{' '}
-            <strong>Nothing has been reserved</strong> — sort these out and send it
-            again.
-          </p>
-
-          {shortfalls.map((s) => (
-            <div key={s.product_id} className="card card-pad" style={{ marginBottom: 10 }}>
-              <div className="strong">{s.product_name}</div>
-              <div className="sub" style={{ marginBottom: 10 }}>
-                You asked for {fmtQty(s.requested)} {s.base_uom}, but only{' '}
-                {fmtQty(s.available)} {s.base_uom}{' '}
-                {Number(s.available) === 1 ? 'is' : 'are'} left.
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {Number(s.available) > 0 && (
-                  <button className="primary" onClick={() => onApply(s, 'reduce')}>
-                    Reduce to {fmtQty(s.available)} {s.base_uom}
-                  </button>
-                )}
-                <button onClick={() => onApply(s, 'remove')}>Remove this item</button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="sheet-foot">
-          <button className="ghost" onClick={onCancelOrder}>Discard the order</button>
-          <button onClick={onClose} style={{ marginLeft: 'auto' }}>Close</button>
-        </div>
-      </div>
-    </div>
   )
 }

@@ -82,6 +82,9 @@ function Gate() {
         <Route path="stock" element={<Stock />} />
         <Route path="orders" element={<Orders />} />
         <Route path="orders/new" element={<NewOrder />} />
+        {/* Same screen. An order is the same thing whether it is being taken
+            or corrected, and two screens would drift apart within a month. */}
+        <Route path="orders/:id/edit" element={<NewOrder />} />
         <Route path="invoices" element={<Invoices />} />
         <Route
           path="invoices/new"

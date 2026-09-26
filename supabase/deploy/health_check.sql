@@ -125,6 +125,12 @@ select * from (values
                                            and p.proname = 'order_line_discounts'
                                            and (select count(*) from
                                                  regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
+  ('031', 'own orders',         to_regprocedure('app.require_own_order_if_rep(uuid,text)') is not null
+                             and to_regclass('public.v_order_for_edit') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'v_pending_orders'
+                                            and column_name = 'rep_id')),
   ('026', 'opening balances as documents',
                                  to_regprocedure('public.post_opening_balances(integer)') is not null
                              and to_regclass('public.v_opening_balance_status') is not null

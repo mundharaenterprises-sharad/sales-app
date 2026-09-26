@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
@@ -15,6 +15,7 @@ interface OrderRow {
   party_code: string
   party_name: string
   route_name: string
+  rep_id: string | null
   rep_name: string | null
   lines: number
   qty_pending_base: number
@@ -41,11 +42,25 @@ const LABEL: Record<string, string> = {
 }
 
 export default function Orders() {
-  const { can } = useSession()
+  const { can, user } = useSession()
   const nav = useNavigate()
-  const location = useLocation()
-  const justCreated = (location.state as { justCreated?: string } | null)?.justCreated
   const canBill = can('ACCOUNTS', 'ADMIN')
+
+  /**
+   * A rep works their own orders; the office works everyone's. This mirrors
+   * app.require_own_order_if_rep in the database — which is what actually
+   * enforces it. Hiding the button is a courtesy, not the rule.
+   */
+  const mine = useCallback(
+    (r: OrderRow) =>
+      user?.role !== 'REP' || r.rep_id === null || r.rep_id === user.id,
+    [user],
+  )
+
+  const editable = useCallback(
+    (r: OrderRow) => r.status === 'SUBMITTED' && mine(r),
+    [mine],
+  )
 
   const [rows, setRows] = useState<OrderRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -208,13 +223,6 @@ export default function Orders() {
           </Link>
         </span>
       </div>
-
-      {justCreated && (
-        <Banner tone="info">
-          Order <strong>{justCreated}</strong> submitted. The stock on it is now
-          reserved.
-        </Banner>
-      )}
 
       <ErrorBanner error={error} />
 
@@ -384,10 +392,16 @@ export default function Orders() {
                             <button className="primary">Make bill</button>
                           </Link>
                         )}
+                        {editable(r) && (
+                          <Link to={`/orders/${r.order_id}/edit`}>
+                            <button>Edit</button>
+                          </Link>
+                        )}
                         <button
                           className="ghost"
                           onClick={() => void cancel(r)}
-                          disabled={busyId === r.order_id || !can('REP', 'ACCOUNTS', 'ADMIN')}
+                          disabled={busyId === r.order_id || !mine(r)}
+                          title={mine(r) ? undefined : `${r.rep_name} took this order`}
                         >
                           {busyId === r.order_id ? <Spinner /> : 'Cancel'}
                         </button>

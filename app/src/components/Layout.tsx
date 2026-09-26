@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useSession, useOnline } from '../lib/session'
 import { Banner } from './ui'
+import OrderSaveBanner from './OrderSaveBanner'
 import type { Role } from '../lib/supabase'
 
 interface NavItem {
@@ -121,6 +122,7 @@ export default function Layout() {
       </nav>
 
       <main>
+        <OrderSaveBanner />
         {!online && (
           <Banner tone="warn">
             <strong>You are offline.</strong> You can look at customers and stock
