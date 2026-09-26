@@ -15,6 +15,7 @@ export interface OrderLineRow {
   qty: number
   pack_size: number
   rate: number
+  line_discount_pct: number | null
   qty_pending_base: number
   product: {
     code: string
@@ -31,6 +32,14 @@ export interface BillLine {
   uom: 'BASE' | 'PACK'
   qty: number
   rate: number
+  /**
+   * What the rep agreed at the shop, as a percentage.
+   *
+   * A percentage rather than an amount because a bill often covers only part
+   * of an order — half today, the rest when stock arrives — and "200 off"
+   * cannot be split honestly across two bills, while "5%" can.
+   */
+  line_discount_pct: number | null
 }
 
 /**
@@ -54,11 +63,12 @@ export function pendingAsLine(r: OrderLineRow): BillLine | null {
     rate: asPack
       ? Number(r.rate)
       : Number(r.rate) / (r.uom === 'PACK' && packSize > 1 ? packSize : 1),
+    line_discount_pct: r.line_discount_pct == null ? null : Number(r.line_discount_pct),
   }
 }
 
 const LINE_SELECT =
-  'id, product_id, uom, qty, pack_size, rate, qty_pending_base,' +
+  'id, product_id, uom, qty, pack_size, rate, line_discount_pct, qty_pending_base,' +
   ' product:product_id (code, name, base_uom, pack_uom, pack_size)'
 
 export async function fetchOrderLines(orderId: string): Promise<OrderLineRow[]> {

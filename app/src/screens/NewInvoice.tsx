@@ -52,6 +52,8 @@ interface OrderHead {
   order_date: string
   status: string
   remarks: string | null
+  bill_discount_pct: number | null
+  bill_discount_amount: number | null
 }
 
 interface OrderLineRow {
@@ -61,6 +63,7 @@ interface OrderLineRow {
   qty: number
   pack_size: number
   rate: number
+  line_discount_pct: number | null
   qty_pending_base: number
   product: {
     code: string
@@ -254,7 +257,7 @@ export default function NewInvoice() {
         supabase
           .from('sales_order_line')
           .select(
-            'id, product_id, uom, qty, pack_size, rate, qty_pending_base,' +
+            'id, product_id, uom, qty, pack_size, rate, line_discount_pct, qty_pending_base,' +
               ' product:product_id (code, name, base_uom, pack_uom, pack_size)',
           )
           .eq('order_id', orderId)
@@ -270,6 +273,14 @@ export default function NewInvoice() {
       setOrder(head)
       setParty(plist.find((x) => x.party_id === head.party_id) ?? null)
       setRemarks(head.remarks ?? '')
+
+      // Start where the rep left off. As a percentage, never the amount: this
+      // bill may cover only part of the order, and a flat amount carried onto
+      // a half bill would take the whole discount twice.
+      if (head.bill_discount_pct) {
+        setDiscMode('PCT')
+        setBillDisc(String(Number(head.bill_discount_pct)))
+      }
 
       const rows = (ol.data ?? []) as unknown as OrderLineRow[]
       setLines(
@@ -298,7 +309,9 @@ export default function NewInvoice() {
               uom: asPack ? ('PACK' as const) : ('BASE' as const),
               qty: String(asPack ? pending / packSize : pending),
               rate: String(asPack ? Number(r.rate) : Number(r.rate) / (r.uom === 'PACK' ? packSize : 1)),
-              discPct: '',
+              // Whatever the rep agreed at the shop, carried forward. Editable:
+              // it is what was quoted, not a rule the office cannot correct.
+              discPct: r.line_discount_pct ? String(Number(r.line_discount_pct)) : '',
               pendingBase: pending,
               include: true,
             }
@@ -385,6 +398,9 @@ export default function NewInvoice() {
   }, [billDisc, discMode, afterLines])
 
   const net = Math.round((afterLines - billDiscValue) * 100) / 100
+
+  /** What the rep wrote on the order, for the line under the discount box. */
+  const quoted = order?.bill_discount_pct ? Number(order.bill_discount_pct) : null
 
   // ---------------------------------------------------------------------------
   // Save
@@ -721,7 +737,17 @@ export default function NewInvoice() {
                   <option value="PCT">%</option>
                 </select>
               </div>
-              <div className="hint">Spread across the items in proportion to their value.</div>
+              <div className="hint">
+                Spread across the items in proportion to their value.
+                {quoted !== null && (
+                  <>
+                    {' '}The rep agreed <strong>{quoted}%</strong> on this order
+                    {discMode === 'PCT' && Number(billDisc) === quoted
+                      ? ', carried over.'
+                      : ' — you have changed it.'}
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="field">

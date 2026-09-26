@@ -93,4 +93,9 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/013_purchase_daybook_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Order discount tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/014_order_discount_tests.sql" 2>&1 | strip
+
+echo
 echo "All suites passed."

@@ -51,8 +51,11 @@ select * from (values
                                             and column_name = 'replaces_invoice_id')),
   ('020', 'same-day bill correction',
                                  to_regprocedure('public.revise_sales_invoice(uuid,jsonb,numeric,numeric,text)') is not null),
+  -- Checked against cancel_sales_order rather than create_sales_order: 029
+  -- changed the latter's signature, and a health check that fails because a
+  -- later migration did its job is worse than no check at all.
   ('013', 'order and invoice functions',
-                                 to_regprocedure('public.create_sales_order(uuid,date,jsonb,text)') is not null),
+                                 to_regprocedure('public.cancel_sales_order(uuid,text)') is not null),
   ('014', 'return and receipt functions',
                                  to_regprocedure('public.allocate_credit(jsonb,uuid,uuid)') is not null),
   ('015', 'reports',             to_regclass('public.v_party_ledger') is not null),
@@ -97,6 +100,13 @@ select * from (values
                                  exists (select 1 from pg_proc
                                           where proname = 'import_masters'
                                             and prosrc like '%master_code%')),
+  ('029', 'order discounts',     to_regprocedure('public.create_sales_order(uuid,date,jsonb,text,numeric,numeric)') is not null
+                             and to_regprocedure('public.create_sales_order(uuid,date,jsonb,text)') is null
+                             and to_regclass('public.v_order_line_billing') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_order_line'
+                                            and column_name = 'line_discount_pct')),
   ('028', 'supplier editing',    to_regclass('public.v_supplier_list') is not null
                              and exists (select 1 from pg_trigger
                                           where tgname = 'supplier_guard'
@@ -137,7 +147,7 @@ select 1, 'tables', count(*)::text, '25', count(*) = 25
   from pg_tables where schemaname = 'public';
 
 insert into _health
-select 2, 'views', count(*)::text, '27 or more', count(*) >= 27
+select 2, 'views', count(*)::text, '28 or more', count(*) >= 28
   from pg_views where schemaname = 'public';
 
 insert into _health

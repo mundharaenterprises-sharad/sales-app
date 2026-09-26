@@ -36,6 +36,8 @@ interface Line {
   uom: 'BASE' | 'PACK'
   qty: string
   rate: string
+  /** What was agreed at the shop for this item, as a percentage. */
+  discPct: string
 }
 
 /** One short entry from the SA001 payload. */
@@ -162,7 +164,7 @@ export default function NewOrder() {
         next[i] = { ...next[i], qty: String((Number(next[i].qty) || 0) + 1) }
         return next
       }
-      return [...ls, { product: p, uom: 'BASE', qty: '1', rate: String(p.sale_rate) }]
+      return [...ls, { product: p, uom: 'BASE', qty: '1', rate: String(p.sale_rate), discPct: '' }]
     })
   }, [])
 
@@ -192,12 +194,55 @@ export default function NewOrder() {
   const qtyBase = (l: Line) =>
     (Number(l.qty) || 0) * (l.uom === 'PACK' ? Number(l.product.pack_size) : 1)
 
-  const lineTotal = (l: Line) => (Number(l.qty) || 0) * (Number(l.rate) || 0)
+  const [orderDisc, setOrderDisc] = useState('')
+  const [discMode, setDiscMode] = useState<'AMOUNT' | 'PCT'>('PCT')
 
-  const total = useMemo(() => lines.reduce((s, l) => s + lineTotal(l), 0), [lines])
+  const lineGross = (l: Line) => (Number(l.qty) || 0) * (Number(l.rate) || 0)
+
+  const lineDiscount = (l: Line) => {
+    const pct = Number(l.discPct)
+    if (!Number.isFinite(pct) || pct <= 0) return 0
+    return Math.round(lineGross(l) * Math.min(pct, 100)) / 100 === 0
+      ? 0
+      : Math.round(((lineGross(l) * Math.min(pct, 100)) / 100) * 100) / 100
+  }
+
+  const lineTotal = (l: Line) =>
+    Math.round((lineGross(l) - lineDiscount(l)) * 100) / 100
+
+  const gross = useMemo(() => lines.reduce((s, l) => s + lineGross(l), 0), [lines])
+  const lineDiscTotal = useMemo(
+    () => lines.reduce((s, l) => s + lineDiscount(l), 0),
+    [lines],
+  )
+  const afterLines = Math.round((gross - lineDiscTotal) * 100) / 100
+
+  // A discount on the whole order, on top of anything given per item. Typed as
+  // a percentage or an amount, because a rep agrees whichever the shop asked
+  // for, and translating in your head at the counter is how mistakes happen.
+  const orderDiscValue = useMemo(() => {
+    const v = Number(orderDisc)
+    if (!Number.isFinite(v) || v <= 0) return 0
+    return discMode === 'PCT'
+      ? Math.round(afterLines * Math.min(v, 100)) / 100 === 0
+        ? 0
+        : Math.round(((afterLines * Math.min(v, 100)) / 100) * 100) / 100
+      : Math.round(v * 100) / 100
+  }, [orderDisc, discMode, afterLines])
+
+  const total = Math.round((afterLines - orderDiscValue) * 100) / 100
 
   const problems = useMemo(() => {
     const out: string[] = []
+    lines.forEach((l, i) => {
+      const d = Number(l.discPct)
+      if (l.discPct.trim() !== '' && (!Number.isFinite(d) || d < 0 || d > 100)) {
+        out.push(`Line ${i + 1}: discount must be between 0 and 100`)
+      }
+    })
+    if (orderDiscValue > afterLines) {
+      out.push('The discount on the order is more than the order itself')
+    }
     lines.forEach((l, i) => {
       const q = Number(l.qty)
       if (!Number.isFinite(q) || q <= 0) out.push(`Line ${i + 1}: quantity must be above zero`)
@@ -208,7 +253,7 @@ export default function NewOrder() {
         )
     })
     return out
-  }, [lines])
+  }, [lines, orderDiscValue, afterLines])
 
   const canSubmit = !!party && lines.length > 0 && problems.length === 0 && !busy && online
 
@@ -225,6 +270,7 @@ export default function NewOrder() {
       uom: l.uom,
       qty: Number(l.qty),
       rate: Number(l.rate),
+      line_discount_pct: Number(l.discPct) > 0 ? Number(l.discPct) : null,
     }))
 
     const { data, error } = await supabase.rpc('create_sales_order', {
@@ -232,6 +278,8 @@ export default function NewOrder() {
       p_order_date: new Date().toISOString().slice(0, 10),
       p_lines: payload,
       p_remarks: remarks.trim() || null,
+      p_bill_discount_amount: discMode === 'AMOUNT' ? Number(orderDisc) || 0 : 0,
+      p_bill_discount_pct: discMode === 'PCT' ? Number(orderDisc) || null : null,
     })
 
     if (error) {
@@ -248,7 +296,10 @@ export default function NewOrder() {
 
     const res = data as { order_id: string; doc_no: string }
     nav('/orders', { replace: true, state: { justCreated: res.doc_no } })
-  }, [party, lines, remarks, nav])
+    // orderDisc and discMode belong here: without them submit keeps the copy
+    // it was built with, and an order saves with no discount however much the
+    // screen says otherwise.
+  }, [party, lines, remarks, orderDisc, discMode, nav])
 
   /** Apply the shortfall, then let the rep resubmit as one atomic attempt. */
   const applyShortfall = (s: Shortfall, action: 'reduce' | 'remove') => {
@@ -422,9 +473,28 @@ export default function NewOrder() {
                       />
                     </label>
 
+                    <label>
+                      <span>Disc %</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        max="100"
+                        step="any"
+                        placeholder="0"
+                        value={l.discPct}
+                        onChange={(e) => setLine(i, { discPct: e.target.value })}
+                      />
+                    </label>
+
                     <div className="order-line-total">
                       <span>Amount</span>
                       <strong>{fmtMoney(lineTotal(l))}</strong>
+                      {lineDiscount(l) > 0 && (
+                        <div className="sub" style={{ fontWeight: 400 }}>
+                          was {fmtMoney(lineGross(l))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -459,10 +529,44 @@ export default function NewOrder() {
           />
         </div>
 
+        <div className="field">
+          <label htmlFor="ord-disc">Discount on the whole order</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              id="ord-disc"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              placeholder="0"
+              value={orderDisc}
+              onChange={(e) => setOrderDisc(e.target.value)}
+            />
+            <select
+              value={discMode}
+              aria-label="Discount type"
+              onChange={(e) => setDiscMode(e.target.value as 'AMOUNT' | 'PCT')}
+              style={{ width: 'auto' }}
+            >
+              <option value="PCT">%</option>
+              <option value="AMOUNT">Amount</option>
+            </select>
+          </div>
+          <div className="hint">
+            On top of anything given per item. It carries onto the bill as a
+            percentage, so a part delivery takes its share and no more.
+          </div>
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <div className="sub">Order total</div>
             <div className="stat">{fmtMoney(total)}</div>
+            {(lineDiscTotal > 0 || orderDiscValue > 0) && (
+              <div className="sub">
+                {fmtMoney(gross)} less {fmtMoney(lineDiscTotal + orderDiscValue)} discount
+              </div>
+            )}
           </div>
           <button
             className="primary"
