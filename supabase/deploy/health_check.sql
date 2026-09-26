@@ -116,6 +116,15 @@ select * from (values
                              and to_regclass('public.v_day_book') is not null
                              and to_regclass('public.v_day_summary') is not null
                              and to_regclass('public.v_purchase_list') is not null),
+  -- 030 is a one-function fix, so its signature is the text of the function
+  -- itself: the three staging updates saying `where true`.
+  ('030', 'discount WHERE clause',
+                                 exists (select 1 from pg_proc p
+                                          join pg_namespace n on n.oid = p.pronamespace
+                                         where n.nspname = 'app'
+                                           and p.proname = 'order_line_discounts'
+                                           and (select count(*) from
+                                                 regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
   ('026', 'opening balances as documents',
                                  to_regprocedure('public.post_opening_balances(integer)') is not null
                              and to_regclass('public.v_opening_balance_status') is not null
