@@ -173,6 +173,10 @@ export default function DayBook() {
       header: 'Type',
       value: (r) => LABEL[r.doc_type] ?? r.doc_type,
       width: 14,
+      // Without this, being the first column made it the phone's headline and
+      // the day book read as a list of the word "Payment". The shop is the
+      // headline; what kind of document it was is a detail underneath.
+      mobile: 'meta',
     },
     {
       header: 'Document',
@@ -196,19 +200,22 @@ export default function DayBook() {
       header: 'Who',
       value: (r) => r.who,
       width: 28,
+      mobile: 'title',
       cell: (r) => (
         <>
           {r.who}
-          <br />
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            {r.who_code}
-            {r.route_name ? ` · ${r.route_name}` : ''}
+          <span className="only-wide">
+            <br />
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {r.who_code}
+              {r.route_name ? ` · ${r.route_name}` : ''}
+            </span>
           </span>
         </>
       ),
     },
     { header: 'Group', value: (r) => r.master_name, width: 12 },
-    { header: 'Entered by', value: (r) => r.entered_by, width: 18 },
+    { header: 'Entered by', value: (r) => r.entered_by, width: 18, mobile: 'hide' },
     {
       header: 'Amount',
       value: (r) => Number(r.amount || 0),

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney } from '../lib/format'
+import { fmtDate, fmtMoney, fmtDayMonth } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
@@ -231,7 +231,7 @@ export default function Invoices() {
           </div>
 
           <div className="card table-wrap">
-            <table className="data">
+            <table className="data compact">
               <thead>
                 <tr>
                   <th style={{ width: 34 }}>
@@ -248,12 +248,12 @@ export default function Invoices() {
                       }
                     />
                   </th>
-                  <th>Bill</th>
                   <th>Customer</th>
+                  <th>Bill</th>
                   <th>Group</th>
-                  <th className="num">Amount</th>
                   <th className="num">Paid</th>
                   <th className="num">Due</th>
+                  <th className="num">Amount</th>
                   <th></th>
                 </tr>
               </thead>
@@ -270,7 +270,7 @@ export default function Invoices() {
                         .join(' ') || undefined
                     }
                   >
-                    <td data-label="Print">
+                    <td data-label="Print" className="m-pick">
                       {!r.is_opening && (
                         <input
                           type="checkbox"
@@ -280,13 +280,24 @@ export default function Invoices() {
                         />
                       )}
                     </td>
-                    <td className="primary-cell">
+                    <td data-label="Customer" className="primary-cell m-title">
+                      {r.party_name}
+                      <span className="only-wide">
+                        <br />
+                        <span className="muted" style={{ fontSize: 12.5 }}>
+                          {r.party_code} · {r.route_name}
+                        </span>
+                      </span>
+                    </td>
+
+                    <td data-label="Bill" className="m-meta">
                       <Link to={`/invoices/${r.invoice_id}`} className="strong">
                         {r.doc_no}
                       </Link>
-                      <br />
+                      <span className="only-wide"><br /></span>{' '}
                       <span className="muted" style={{ fontSize: 12.5 }}>
-                        {fmtDate(r.invoice_date)}
+                        <span className="only-wide">{fmtDate(r.invoice_date)}</span>
+                        <span className="only-narrow">{fmtDayMonth(r.invoice_date)}</span>
                       </span>
                       {r.is_opening && <> <span className="pill flat">Opening</span></>}
                       {r.status !== 'ACTIVE' && (
@@ -312,23 +323,16 @@ export default function Invoices() {
                         </>
                       )}
                     </td>
-                    <td data-label="Customer">
-                      {r.party_name}
-                      <br />
-                      <span className="muted" style={{ fontSize: 12.5 }}>
-                        {r.party_code} · {r.route_name}
-                      </span>
-                    </td>
-                    <td data-label="Group">
+                    <td data-label="Group" className="m-meta">
                       {r.master_name ?? <span className="muted">—</span>}
                     </td>
-                    <td data-label="Amount" className="num">{fmtMoney(r.effective_total)}</td>
-                    <td data-label="Paid" className="num muted">{fmtMoney(r.settled)}</td>
-                    <td data-label="Due" className="num">
+                    <td data-label="Paid" className="num muted m-hide">{fmtMoney(r.settled)}</td>
+                    <td data-label="Due" className="num m-meta">
                       {Number(r.outstanding) > 0 ? (
                         <span className="strong">
                           {fmtMoney(r.outstanding)}
-                          <br />
+                          <span className="only-wide"> due</span>
+                          <span className="only-wide"><br /></span>{' '}
                           <AgePill days={r.days_outstanding} />
                         </span>
                       ) : (
@@ -337,7 +341,10 @@ export default function Invoices() {
                         </span>
                       )}
                     </td>
-                    <td data-label="" className="num">
+                    <td data-label="Amount" className="num strong m-lead">
+                      {fmtMoney(r.effective_total)}
+                    </td>
+                    <td data-label="" className="num m-actions">
                       {can('ACCOUNTS', 'ADMIN') && Number(r.outstanding) > 0 && (
                         <Link
                           to={`/receipts/new?party=${r.party_id}&invoice=${r.invoice_id}`}

@@ -23,6 +23,19 @@ export interface ReportColumn<T> {
   type?: CellType
   width?: number
   align?: 'left' | 'right'
+  /**
+   * Where this column goes when the screen is too narrow for a table.
+   *
+   * A row becomes two lines on a phone: `title` and `lead` face each other on
+   * the first, `meta` columns run along the second, `hide` is left out
+   * entirely — still in the Excel file and on the printed page, just not worth
+   * the width here.
+   *
+   * Left unset, the first column is the title, the last money column is the
+   * lead, and everything else is meta. That is right often enough that most
+   * reports never have to say.
+   */
+  mobile?: 'title' | 'lead' | 'meta' | 'hide'
 }
 
 export function Report<T>({
@@ -54,6 +67,19 @@ export function Report<T>({
 }) {
   usePrintPage(REPORT_PAGE, '10mm')
   const today = new Date().toISOString().slice(0, 10)
+
+  /**
+   * Which of the two phone lines each column lands on.
+   *
+   * The last money column is the lead, because that is the figure a report is
+   * usually read for and it belongs beside the name rather than four lines
+   * below it. A column can say for itself and override all of this.
+   */
+  const lastMoney = columns.reduce(
+    (best, c, i) => (c.type === 'money' ? i : best), -1)
+
+  const roleOf = (c: ReportColumn<T>, i: number) =>
+    c.mobile ?? (i === 0 ? 'title' : i === lastMoney ? 'lead' : 'meta')
 
   const exportExcel = () => {
     if (!rows) return
@@ -119,7 +145,7 @@ export function Report<T>({
       ) : (
         <>
           <div className="card table-wrap report">
-            <table className="data">
+            <table className="data compact">
               <thead>
                 <tr>
                   {columns.map((c) => (
@@ -139,6 +165,7 @@ export function Report<T>({
                         className={[
                           c.align === 'right' ? 'num' : '',
                           j === 0 ? 'primary-cell' : '',
+                          `m-${roleOf(c, j)}`,
                         ]
                           .filter(Boolean)
                           .join(' ') || undefined}
@@ -156,7 +183,11 @@ export function Report<T>({
                       <td
                         key={i}
                         data-label={columns[i]?.header}
-                        className={`strong${columns[i]?.align === 'right' ? ' num' : ''}`}
+                        className={[
+                          'strong',
+                          columns[i]?.align === 'right' ? 'num' : '',
+                          columns[i] ? `m-${roleOf(columns[i], i)}` : 'm-meta',
+                        ].filter(Boolean).join(' ')}
                       >
                         {typeof t === 'number' ? fmtMoney(t) : (t ?? '')}
                       </td>

@@ -173,15 +173,15 @@ export default function Stock() {
       ) : (
         <>
           <div className="card table-wrap">
-            <table className="data">
+            <table className="data compact">
               <thead>
                 <tr>
                   <th>Product</th>
                   <th>Group</th>
                   <th className="num">On hand</th>
                   <th className="num">Reserved</th>
-                  <th className="num">Available</th>
                   <th className="num">Rate</th>
+                  <th className="num">Available</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,42 +190,40 @@ export default function Stock() {
                   const reserved = Number(r.reserved)
                   return (
                     <tr key={r.product_id}>
-                      <td className="primary-cell">
+                      {/* What a person scans a stock list for is the name and
+                          what is left of it, so those two make the first line
+                          and the rest folds underneath. */}
+                      <td className="primary-cell m-title">
                         <span className="strong">{r.product_name}</span>
-                        <br />
-                        <span className="muted" style={{ fontSize: 12.5 }}>
-                          {r.product_code}
-                          {r.pack_uom && ` · 1 ${r.pack_uom} = ${fmtQty(r.pack_size)} ${r.base_uom}`}
+                        <span className="only-wide">
+                          <br />
+                          <span className="muted" style={{ fontSize: 12.5 }}>
+                            {r.product_code}
+                            {r.pack_uom && ` · 1 ${r.pack_uom} = ${fmtQty(r.pack_size)} ${r.base_uom}`}
+                          </span>
                         </span>
                       </td>
-                      <td data-label="Group" className="muted">{r.group_name}</td>
-                      <td data-label="On hand" className="num">
+                      <td data-label="Group" className="muted m-meta">{r.group_name}</td>
+                      <td data-label="On hand" className="num m-meta">
                         {fmtQty(r.on_hand)} {r.base_uom}
+                        <span className="only-narrow"> on hand</span>
                       </td>
-                      <td data-label="Reserved" className="num">
-                        {reserved > 0
-                          ? <span className="pill warn">{fmtQty(reserved)}</span>
-                          : <span className="muted">—</span>}
-                      </td>
-                      <td data-label="Available" className="num">
-                        <span className={`pill ${avail > 0 ? 'good' : 'bad'}`}>
-                          {fmtQty(avail)} {r.base_uom}
-                        </span>
-                        {r.available_packs !== null && avail > 0 && (
-                          <>
-                            <br />
-                            <span className="muted" style={{ fontSize: 12 }}>
-                              {fmtQty(r.available_packs)} {r.pack_uom}
-                            </span>
-                          </>
+                      <td data-label="Reserved" className="num m-meta">
+                        {reserved > 0 ? (
+                          <span className="pill warn">
+                            {fmtQty(reserved)}
+                            <span className="only-narrow"> held</span>
+                          </span>
+                        ) : (
+                          <span className="muted only-wide">—</span>
                         )}
                       </td>
-                      <td data-label="Rate" className="num">
+                      <td data-label="Rate" className="num m-meta">
                         <span>
                           {r.pack_uom && r.pack_sale_rate != null && (
                             <>
                               {fmtMoney(r.pack_sale_rate)} / {r.pack_uom}
-                              <br />
+                              <span className="only-wide"><br /></span>{' '}
                             </>
                           )}
                           <span className={r.pack_uom ? 'muted' : undefined}
@@ -233,6 +231,20 @@ export default function Stock() {
                             {fmtMoney(r.sale_rate)} / {r.base_uom}
                           </span>
                         </span>
+                      </td>
+
+                      <td data-label="Available" className="num m-lead">
+                        <span className={`pill ${avail > 0 ? 'good' : 'bad'}`}>
+                          {fmtQty(avail)} {r.base_uom}
+                        </span>
+                        {r.available_packs !== null && avail > 0 && (
+                          <span className="only-wide">
+                            <br />
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              {fmtQty(r.available_packs)} {r.pack_uom}
+                            </span>
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )

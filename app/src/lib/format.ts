@@ -23,6 +23,21 @@ export function fmtQty(n: number | string | null | undefined): string {
   return qtyFmt.format(v)
 }
 
+/**
+ * A date without the year, for a list on a phone.
+ *
+ * Lists are read within days of the thing happening, so the year is four
+ * characters that tell nobody anything — and on a narrow row four characters
+ * are the difference between two lines and three. The full date is still on
+ * the document itself, and on a wide screen.
+ */
+export function fmtDayMonth(d: string | Date | null | undefined): string {
+  if (!d) return '—'
+  const date = typeof d === 'string' ? new Date(d) : d
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+}
+
 export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return '—'
   const date = typeof d === 'string' ? new Date(d) : d

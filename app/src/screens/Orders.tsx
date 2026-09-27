@@ -419,7 +419,7 @@ export default function Orders() {
           )}
 
           <div className="card table-wrap">
-            <table className="data">
+            <table className="data compact">
               <thead>
                 <tr>
                   {canBill && (
@@ -438,8 +438,8 @@ export default function Orders() {
                       />
                     </th>
                   )}
-                  <th>Order</th>
                   <th>Customer</th>
+                  <th>Order</th>
                   <th>Group</th>
                   <th>Status</th>
                   <th className="num">Lines</th>
@@ -451,7 +451,7 @@ export default function Orders() {
                 {filtered.map((r) => (
                   <tr key={r.order_id} className={picked.has(r.order_id) ? 'picked' : undefined}>
                     {canBill && (
-                      <td data-label="Bill">
+                      <td data-label="Bill" className="m-pick">
                         <input
                           type="checkbox"
                           aria-label={`Select ${r.doc_no}`}
@@ -460,54 +460,75 @@ export default function Orders() {
                         />
                       </td>
                     )}
-                    <td className="primary-cell">
-                      <span className="strong">{r.doc_no}</span>
-                      <br />
-                      <span className="muted" style={{ fontSize: 12.5 }}>
-                        {fmtDate(r.order_date)}
-                        {r.rep_name && ` · ${r.rep_name}`}
-                      </span>
-                    </td>
-                    <td data-label="Customer">
+                    {/*
+                      On a wide screen these are seven columns. On a phone the
+                      classes fold them into two lines: the shop and the money
+                      on the first, everything else small underneath. The
+                      desktop wording is unchanged — the second line just uses
+                      the short forms, because a phone has no room for
+                      "Awaiting invoice · 3 lines · 240 pending".
+                    */}
+                    <td data-label="Customer" className="primary-cell m-title">
                       {r.party_name}
-                      <br />
-                      <span className="muted" style={{ fontSize: 12.5 }}>
+                      <span className="sub only-wide">
+                        <br />
                         {r.party_code} · {r.route_name}
                       </span>
                     </td>
-                    <td data-label="Group">{r.master_name ?? '—'}</td>
-                    <td data-label="Status">
-                      <span
-                        className={`pill ${
-                          r.status === 'PARTIALLY_INVOICED' ? 'warn' : 'flat'
-                        }`}
-                      >
-                        {LABEL[r.status] ?? r.status}
+
+                    <td data-label="Order" className="m-meta">
+                      <span className="strong">{r.doc_no}</span>
+                      <span className="only-wide">
+                        <br />
+                        <span className="muted" style={{ fontSize: 12.5 }}>
+                          {fmtDate(r.order_date)}
+                          {r.rep_name && ` · ${r.rep_name}`}
+                        </span>
                       </span>
+                    </td>
+
+                    <td data-label="Group" className="m-meta">{r.master_name ?? '—'}</td>
+
+                    <td data-label="Status" className="m-meta">
+                      {r.status === 'PARTIALLY_INVOICED' ? (
+                        <span className="pill warn">{LABEL[r.status]}</span>
+                      ) : (
+                        /* Every row here is awaiting its bill. Saying so on
+                           each one costs a phone's whole second line and tells
+                           nobody anything, so only the exceptions speak up. */
+                        <span className="only-wide">
+                          <span className="pill flat">{LABEL[r.status] ?? r.status}</span>
+                        </span>
+                      )}
                       {r.expiring_soon && (
-                        <>
-                          <br />
-                          <span className="pill bad" style={{ marginTop: 4 }}>
-                            Reservation expiring
-                          </span>
-                        </>
+                        <> <span className="pill bad">Expiring</span></>
                       )}
                     </td>
-                    <td data-label="Lines" className="num">
-                      {r.lines}
-                      <br />
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        {fmtQty(r.qty_pending_base)} pending
+
+                    <td data-label="Lines" className="num m-meta">
+                      <span className="only-wide">
+                        {r.lines}
+                        <br />
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {fmtQty(r.qty_pending_base)} pending
+                        </span>
+                      </span>
+                      <span className="only-narrow">
+                        {r.lines} item{r.lines === 1 ? '' : 's'}
                       </span>
                     </td>
-                    <td data-label="Value" className="num strong">
+
+                    <td data-label="Value" className="num strong m-lead">
                       {fmtMoney(r.order_value)}
                     </td>
-                    <td data-label="" className="num">
+                    <td data-label="" className="num m-actions">
                       <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {canBill && (
                           <Link to={`/invoices/new?order=${r.order_id}`}>
-                            <button className="primary">Make bill</button>
+                            <button className="primary">
+                              <span className="only-wide">Make bill</span>
+                              <span className="only-narrow">Bill</span>
+                            </button>
                           </Link>
                         )}
                         {editable(r) && (

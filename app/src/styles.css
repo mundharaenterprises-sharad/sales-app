@@ -787,3 +787,110 @@ table.data tr.active-row td { background: var(--navy-100); box-shadow: inset 3px
   padding: 1px 6px; display: inline-block; margin-bottom: 3px;
 }
 @media print { .bill-paid { font-size: 9pt; color: #000; border-color: #000; } }
+
+/* --- Compact list rows on a phone ----------------------------------------
+   A table row normally becomes a card with one line per column, which is
+   honest but enormous: seven columns is a seven-line card, and ten orders is
+   a page you scroll forever looking for one shop.
+
+   So a row that opts in with `compact` becomes two lines instead. The name
+   and the money — the two things anyone is actually scanning for — sit on the
+   first line, facing each other. Everything else drops to a small grey second
+   line, in the order it was written. Nothing is dropped; it is arranged.
+
+   Cells say where they belong: m-title, m-lead, m-meta, m-hide. A table
+   without those classes keeps the old card layout, so this cannot quietly
+   rearrange a screen nobody has looked at.
+   ------------------------------------------------------------------------- */
+
+@media (max-width: 699px) {
+  table.data.compact tr {
+    display: flex;
+    flex-wrap: wrap;
+    /* Centre, not baseline: a tick box and a pill have no baseline worth
+       sharing with a line of text, and baseline alignment left them sitting a
+       few pixels off each other on what is meant to read as one line. */
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 1px;
+    padding: 10px 12px;
+  }
+  table.data.compact td {
+    display: block;
+    /* The card layout above sets width:100% on every cell, which in a
+       wrapping flex row puts each one on a line of its own — the exact thing
+       this is here to stop. */
+    width: auto;
+    padding: 0;
+    border: 0;
+    justify-content: flex-start;
+  }
+  table.data.compact td::before { display: none; }
+
+  /* Line one, left to right: tick box, name, money. Set explicitly because
+     the columns are in the order a wide table wants them, and a phone wants
+     the money at the end of the first line rather than the end of the row. */
+  table.data.compact td.m-pick  { order: -3; }
+  table.data.compact td.m-title { order: -2; }
+  table.data.compact td.m-lead  { order: -1; }
+
+  table.data.compact td.m-title {
+    flex: 1 1 55%;
+    min-width: 0;
+    font-weight: 650;
+    font-size: 15px;
+    line-height: 1.25;
+  }
+  table.data.compact td.m-lead {
+    flex: 0 0 auto;
+    margin-left: auto;
+    text-align: right;
+    font-weight: 700;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  table.data.compact td.m-meta {
+    flex: 0 0 auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-3);
+  }
+  table.data.compact td.m-meta:empty { display: none; }
+  /* A middle dot between the small facts, so they read as a list and not as
+     one run-on sentence. */
+  table.data.compact td.m-meta + td.m-meta::before {
+    content: '·';
+    margin-right: 7px;
+    opacity: .55;
+  }
+  table.data.compact td.m-hide { display: none; }
+
+  /* Buttons keep to the right of the small line rather than taking one of
+     their own: a third line would undo the point of this. */
+  table.data.compact td.m-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  table.data.compact td.m-actions button { min-height: 30px; padding: 3px 10px; font-size: 13px; }
+
+  /* The tick box that selects a row for billing stays first and full size. */
+  table.data.compact td.m-pick { flex: 0 0 auto; align-self: center; }
+
+  table.data.compact tr + tr { border-top: 1px solid var(--line); }
+  table.data.compact tr { border-radius: 0; margin: 0; box-shadow: none; border-left: 0; border-right: 0; }
+  table.data.compact tr:first-child { border-top: 0; }
+  .table-wrap:has(table.data.compact) { padding: 0; }
+
+  table.data.compact tfoot tr { background: var(--surface-2); font-weight: 700; }
+  table.data.compact .pill { font-size: 11px; padding: 1px 7px; }
+}
+
+/* Wording that only fits on one of the two. */
+.only-narrow { display: none; }
+@media (max-width: 699px) {
+  .only-wide { display: none; }
+  .only-narrow { display: inline; }
+}
