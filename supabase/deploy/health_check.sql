@@ -125,6 +125,11 @@ select * from (values
                                            and p.proname = 'order_line_discounts'
                                            and (select count(*) from
                                                  regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
+  ('033', 'orders by master group',
+                                 exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'v_pending_orders'
+                                            and column_name = 'master_code')),
   ('032', 'cash sales and order rounding',
                                  to_regprocedure('public.create_sales_invoice(date,jsonb,uuid,uuid,numeric,numeric,text,boolean)') is not null
                              and to_regprocedure('public.create_sales_invoice(date,jsonb,uuid,uuid,numeric,numeric,text)') is null

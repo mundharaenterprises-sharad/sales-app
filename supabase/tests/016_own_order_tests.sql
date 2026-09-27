@@ -316,4 +316,30 @@ begin
   perform pg_temp.pass('the Orders list agrees with the day book about an order''s value');
 end $$;
 
-\echo '  9 of 9 passed.'
+
+
+-- =============================================================================
+-- 10. The Orders list carries the master group, so it can be filtered by it
+-- =============================================================================
+do $$
+declare v_order uuid; r record;
+begin
+  perform pg_temp.be('22222222-2222-2222-2222-222222222222');
+  v_order := pg_temp.an_order(4);
+
+  select * into r from public.v_pending_orders where order_id = v_order;
+  perform pg_temp.eq(r.master_code, 'CURRENT', 'the list says which group the order is');
+  perform pg_temp.eq(r.master_name, 'Current', 'by name as well as code');
+  perform pg_temp.eq(r.rep_name, 'Ram Bahadur', 'and who took it');
+
+  -- Every order has exactly one group, enforced at the line level, so the
+  -- filter can never show the same order under two headings.
+  perform pg_temp.eq(
+    (select count(distinct master_code) from public.v_pending_orders
+      where order_id = v_order), 1::bigint,
+    'an order appears under exactly one group');
+
+  perform pg_temp.pass('the Orders list can be filtered by master group and rep');
+end $$;
+
+\echo '  10 of 10 passed.'

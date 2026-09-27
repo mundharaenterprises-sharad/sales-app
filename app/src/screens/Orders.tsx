@@ -6,6 +6,7 @@ import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useSession } from '../lib/session'
 import { fetchOrderLines, pendingAsLine } from '../lib/billing'
 import { useDialog } from '../components/Dialog'
+import { useMasterGroups, MasterFilter } from '../lib/masters'
 
 interface OrderRow {
   order_id: string
@@ -18,6 +19,8 @@ interface OrderRow {
   route_name: string
   rep_id: string | null
   rep_name: string | null
+  master_code: string | null
+  master_name: string | null
   lines: number
   qty_pending_base: number
   order_value: number
@@ -67,6 +70,9 @@ export default function Orders() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  const [master, setMaster] = useState('')
+  const [rep, setRep] = useState('')
+  const { masters } = useMasterGroups()
 
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [billing, setBilling] = useState<{ done: number; total: number } | null>(null)
@@ -134,14 +140,31 @@ export default function Orders() {
     [load, ask],
   )
 
+  /**
+   * An order taken at the counter has no rep behind it. Naming that rather
+   * than leaving a blank in the list keeps the filter honest — and matches
+   * what the sales register already calls it.
+   */
+  const COUNTER = 'Counter sale'
+  const repOf = (r: OrderRow) => r.rep_name ?? COUNTER
+
+  const reps = useMemo(
+    () => [...new Set((rows ?? []).map(repOf))].sort(),
+    [rows],
+  )
+
   const filtered = useMemo(() => {
     if (!rows) return []
     const needle = q.trim().toLowerCase()
-    if (!needle) return rows
-    return rows.filter((r) =>
-      `${r.doc_no} ${r.party_name} ${r.party_code} ${r.route_name}`.toLowerCase().includes(needle),
-    )
-  }, [rows, q])
+    return rows.filter((r) => {
+      if (master && r.master_code !== master) return false
+      if (rep && repOf(r) !== rep) return false
+      if (!needle) return true
+      return `${r.doc_no} ${r.party_name} ${r.party_code} ${r.route_name}`
+        .toLowerCase()
+        .includes(needle)
+    })
+  }, [rows, q, master, rep])
 
   const totalValue = useMemo(
     () => filtered.reduce((s, r) => s + Number(r.order_value), 0),
@@ -156,7 +179,36 @@ export default function Orders() {
       return next
     })
 
+  /**
+   * The orders that are both ticked AND on screen.
+   *
+   * Everything about the selection is derived from this rather than from the
+   * ticked set, because the two can differ the moment a filter is applied.
+   * The button used to count the ticked set while billPicked only ever billed
+   * the visible ones, so ticking three Parle orders, switching to Current and
+   * ticking two more offered to "Bill 5 orders" and raised two. A button that
+   * overstates what it is about to do is worse than no button.
+   */
+  const toBill = useMemo(
+    () => filtered.filter((r) => picked.has(r.order_id)),
+    [filtered, picked],
+  )
+
+  const pickedValue = useMemo(
+    () => toBill.reduce((t, r) => t + Number(r.order_value), 0),
+    [toBill],
+  )
+
   const allShownPicked = filtered.length > 0 && filtered.every((r) => picked.has(r.order_id))
+
+  /**
+   * Changing the group or the salesman clears the selection.
+   *
+   * This is how the office works: one group, bill it, next group. Carrying
+   * ticks across a change of filter serves nothing and invites the mistake
+   * above, so the selection belongs to the view that made it.
+   */
+  useEffect(() => { setPicked(new Set()) }, [master, rep])
 
   /**
    * Bill every ticked order, each as its own bill, at whatever the order still
@@ -167,7 +219,12 @@ export default function Orders() {
    * own and the rest still go through. The report afterwards says which.
    */
   const billPicked = useCallback(async () => {
-    const orders = filtered.filter((r) => picked.has(r.order_id))
+    // Oldest order first, whatever order the list is being shown in. The list
+    // reads newest-first because that is how you look for something; bills
+    // should come out in the order the orders were taken, so their numbers
+    // run the same way. Billing a whole group in one go therefore produces a
+    // consecutive block of bill numbers in order-number order.
+    const orders = [...toBill].sort((a, b) => a.doc_no.localeCompare(b.doc_no))
     if (orders.length === 0) return
 
     setError(null)
@@ -227,7 +284,7 @@ export default function Orders() {
     setResults(out)
     setPicked(new Set())
     await load()
-  }, [filtered, picked, load])
+  }, [toBill, load])
 
   if (rows === null) return <Loading what="Loading orders" />
 
@@ -304,21 +361,57 @@ export default function Orders() {
                 onChange={(e) => setQ(e.target.value)}
               />
             </span>
-            {canBill && picked.size > 0 && (
+
+            <MasterFilter masters={masters} value={master} onChange={setMaster} />
+
+            {reps.length > 1 && (
+              <label className="inline-field">
+                <span>Salesman</span>
+                <select
+                  value={rep}
+                  aria-label="Filter by salesman"
+                  onChange={(e) => setRep(e.target.value)}
+                >
+                  <option value="">Everyone</option>
+                  {reps.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {(master || rep) && (
+              <button className="ghost" onClick={() => { setMaster(''); setRep('') }}>
+                Clear
+              </button>
+            )}
+
+            {canBill && toBill.length > 0 && (
               <button className="primary" onClick={() => void billPicked()} disabled={!!billing}>
                 {billing ? (
                   <>
                     <Spinner /> {billing.done} of {billing.total}
                   </>
                 ) : (
-                  `Bill ${picked.size} order${picked.size === 1 ? '' : 's'}`
+                  `Bill ${toBill.length} order${toBill.length === 1 ? '' : 's'} · ${fmtMoney(pickedValue)}`
                 )}
               </button>
             )}
           </div>
 
-          {canBill && picked.size > 0 && !billing && (
+          {canBill && toBill.length > 0 && !billing && (
             <Banner tone="info">
+              {master && (
+                <>
+                  <strong>
+                    {toBill.length === filtered.length
+                      ? `All ${filtered.length} ${masters.find((m) => m.code === master)?.name ?? ''} orders`
+                      : `${toBill.length} ${masters.find((m) => m.code === master)?.name ?? ''} orders`}
+                  </strong>{' '}
+                  — billed oldest first, so the bill numbers run in the same order
+                  as the order numbers.{' '}
+                </>
+              )}
               Each ticked order becomes its own bill, for everything it still has
               pending, at the rates on the order. To change a quantity or give a
               discount, use <strong>Make bill</strong> on that order instead.
@@ -347,6 +440,7 @@ export default function Orders() {
                   )}
                   <th>Order</th>
                   <th>Customer</th>
+                  <th>Group</th>
                   <th>Status</th>
                   <th className="num">Lines</th>
                   <th className="num">Value</th>
@@ -381,6 +475,7 @@ export default function Orders() {
                         {r.party_code} · {r.route_name}
                       </span>
                     </td>
+                    <td data-label="Group">{r.master_name ?? '—'}</td>
                     <td data-label="Status">
                       <span
                         className={`pill ${
