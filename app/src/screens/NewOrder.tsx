@@ -293,6 +293,48 @@ export default function NewOrder() {
 
   // ---------------------------------------------------------------------------
 
+
+  /**
+   * Where the cursor should land next.
+   *
+   * Adding an item leaves the keyboard nowhere: the picker that had focus has
+   * just closed, so the next Tab starts from the top of the page and the
+   * biller reaches for the mouse.
+   *
+   * It lands on the UNIT box, not the quantity. Pieces or cartons is the
+   * decision that changes what every other figure on the line means, and a
+   * select is the one control you cannot reach any other way without a mouse
+   * — up and down arrows change it in place, then Tab goes on to the quantity,
+   * the rate and the discount in the order they are read.
+   *
+   * A product sold only loose has nothing to choose, so its unit box is
+   * disabled and the cursor falls through to the quantity rather than landing
+   * on something dead.
+   *
+   * Held as state rather than done inside the add handler, because neither
+   * control exists until React has rendered the line.
+   */
+  const [focusQtyFor, setFocusQtyFor] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!focusQtyFor) return
+    const key = CSS.escape(focusQtyFor)
+    setFocusQtyFor(null)
+
+    const unit = document.querySelector<HTMLSelectElement>(`[data-unit-for="${key}"]`)
+    const qty = document.querySelector<HTMLInputElement>(`[data-qty-for="${key}"]`)
+    const el = unit && !unit.disabled ? unit : qty
+    if (!el) return
+
+    el.focus()
+    // On the quantity, select what is there so the first keystroke is the
+    // number and not a digit stuck onto the 1 already in the box.
+    if (el === qty) {
+      try { qty.select() } catch { /* some browsers refuse on some input types */ }
+    }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusQtyFor])
+
   /** The foot of the item list, so a newly added line can be scrolled to. */
   const endOfLines = useRef<HTMLDivElement>(null)
 
@@ -304,8 +346,10 @@ export default function NewOrder() {
       if (i >= 0) {
         const next = [...ls]
         next[i] = { ...next[i], qty: String((Number(next[i].qty) || 0) + 1) }
+        setFocusQtyFor(p.product_id)
         return next
       }
+      setFocusQtyFor(p.product_id)
       return [...ls, { product: p, uom: 'BASE', qty: '1', rate: String(p.sale_rate), discPct: '' }]
     })
     // After the list has grown. Without the wait this scrolls to where the
@@ -669,20 +713,9 @@ export default function NewOrder() {
 
                   <div className="order-line-grid">
                     <label>
-                      <span>Quantity</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        step="any"
-                        value={l.qty}
-                        onChange={(e) => setLine(i, { qty: e.target.value })}
-                      />
-                    </label>
-
-                    <label>
                       <span>Unit</span>
                       <select
+                        data-unit-for={l.product.product_id}
                         value={l.uom}
                         onChange={(e) => switchUom(i, e.target.value as 'BASE' | 'PACK')}
                         disabled={!l.product.pack_uom || Number(l.product.pack_size) <= 1}
@@ -694,6 +727,27 @@ export default function NewOrder() {
                           </option>
                         )}
                       </select>
+                    </label>
+
+                    <label>
+                      <span>Quantity</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        data-qty-for={l.product.product_id}
+                        value={l.qty}
+                        onChange={(e) => setLine(i, { qty: e.target.value })}
+                        onKeyDown={(e) => {
+                          // Enter asks for the next item: pick, type, Enter,
+                          // pick — a whole order without touching the mouse.
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            setPicking('product')
+                          }
+                        }}
+                      />
                     </label>
 
                     <label>

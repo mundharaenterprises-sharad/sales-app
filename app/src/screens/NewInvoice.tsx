@@ -349,14 +349,60 @@ export default function NewInvoice() {
     [stock],
   )
 
+
+  /**
+   * Where the cursor should land next.
+   *
+   * Adding an item leaves the keyboard nowhere: the picker that had focus has
+   * just closed, so the next Tab starts from the top of the page and the
+   * biller reaches for the mouse.
+   *
+   * It lands on the UNIT box, not the quantity. Pieces or cartons is the
+   * decision that changes what every other figure on the line means, and a
+   * select is the one control you cannot reach any other way without a mouse
+   * — up and down arrows change it in place, then Tab goes on to the quantity,
+   * the rate and the discount in the order they are read.
+   *
+   * A product sold only loose has nothing to choose, so its unit box is
+   * disabled and the cursor falls through to the quantity rather than landing
+   * on something dead.
+   *
+   * Held as state rather than done inside the add handler, because neither
+   * control exists until React has rendered the line.
+   */
+  const [focusQtyFor, setFocusQtyFor] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!focusQtyFor) return
+    const key = CSS.escape(focusQtyFor)
+    setFocusQtyFor(null)
+
+    const unit = document.querySelector<HTMLSelectElement>(`[data-unit-for="${key}"]`)
+    const qty = document.querySelector<HTMLInputElement>(`[data-qty-for="${key}"]`)
+    const el = unit && !unit.disabled ? unit : qty
+    if (!el) return
+
+    el.focus()
+    // On the quantity, select what is there so the first keystroke is the
+    // number and not a digit stuck onto the 1 already in the box.
+    if (el === qty) {
+      try { qty.select() } catch { /* some browsers refuse on some input types */ }
+    }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusQtyFor])
+
   const addProduct = useCallback((p: StockRow) => {
+    // Whether the line is new or an existing one being bumped, the quantity
+    // is what the biller is about to change.
     setLines((ls) => {
       const i = ls.findIndex((l) => l.productId === p.product_id)
       if (i >= 0) {
         const next = [...ls]
         next[i] = { ...next[i], qty: String((num(next[i].qty, 0) || 0) + 1), include: true }
+        setFocusQtyFor(next[i].key)
         return next
       }
+      setFocusQtyFor(`new-${p.product_id}`)
       return [
         ...ls,
         {
@@ -754,6 +800,7 @@ export default function NewInvoice() {
                   <label>
                     <span>Unit</span>
                     <select
+                      data-unit-for={l.key}
                       value={l.uom}
                       disabled={!l.packUom || l.packSize <= 1}
                       onChange={(e) => switchUom(l, e.target.value as 'BASE' | 'PACK')}
@@ -772,8 +819,18 @@ export default function NewInvoice() {
                     <input
                       type="text"
                       inputMode="decimal"
+                      data-qty-for={l.key}
                       value={l.qty}
                       onChange={(e) => setLine(l.key, { qty: e.target.value })}
+                      onKeyDown={(e) => {
+                        // Enter asks for the next item, which closes the loop:
+                        // pick, type the quantity, Enter, pick again — a whole
+                        // bill without reaching for the mouse once.
+                        if (e.key === 'Enter' && canAddItems) {
+                          e.preventDefault()
+                          setPicking('product')
+                        }
+                      }}
                     />
                   </label>
 
@@ -816,9 +873,21 @@ export default function NewInvoice() {
           })}
 
           {canAddItems && (
-            <button onClick={() => setPicking('product')} disabled={!party}>
-              Add another item
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button onClick={() => setPicking('product')} disabled={!party}>
+                Add another item
+              </button>
+              {/*
+                Said once, where somebody about to add an item will read it.
+                A keyboard shortcut nobody knows about is a shortcut nobody
+                has; and this one is only worth knowing at a desk, so it does
+                not take space on a phone.
+              */}
+              <span className="sub only-wide">
+                <kbd>↑</kbd><kbd>↓</kbd> change the unit, <kbd>Tab</kbd> moves along the
+                line, <kbd>Enter</kbd> adds the next item.
+              </span>
+            </div>
           )}
         </div>
       )}

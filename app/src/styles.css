@@ -894,3 +894,12 @@ table.data tr.active-row td { background: var(--navy-100); box-shadow: inset 3px
   .only-wide { display: none; }
   .only-narrow { display: inline; }
 }
+
+/* A key named in running text. */
+kbd {
+  font: inherit; font-size: 12px; font-weight: 650;
+  border: 1px solid var(--line-2); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 5px; background: var(--surface);
+  color: var(--ink-2);
+}
+kbd + kbd { margin-left: 3px; }
