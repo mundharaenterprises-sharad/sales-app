@@ -39,7 +39,15 @@ export default function SalesRegister() {
   const load = useCallback(async () => {
     setError(null)
     setRows(null)
-    let q = supabase.from('v_sales_register').select('*').order('invoice_date')
+    // Ascending, unlike the Bills list: a register is read forwards, the way
+    // a book is. The second key is still needed — without it a day's bills
+    // come back in no order at all, which makes two printings of the same
+    // register disagree.
+    let q = supabase
+      .from('v_sales_register')
+      .select('*')
+      .order('invoice_date')
+      .order('doc_no')
     if (from) q = q.gte('invoice_date', from)
     if (to) q = q.lte('invoice_date', to)
     const { data, error } = await q

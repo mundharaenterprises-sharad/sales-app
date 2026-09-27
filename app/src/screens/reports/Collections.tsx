@@ -44,7 +44,13 @@ export default function Collections() {
       .from('v_collection_report')
       .select('*')
       .eq('status', 'ACTIVE')
+      // Newest first, and the second key is what makes that true. A date alone
+      // leaves same-day documents in whatever order the database happens to
+      // return them, which is insertion order — so the day's rows came back
+      // oldest-first inside a newest-first list. Every document number runs
+      // with time, so it is the tie-break.
       .order('receipt_date', { ascending: false })
+      .order('doc_no', { ascending: false })
     if (from) q = q.gte('receipt_date', from)
     if (to) q = q.lte('receipt_date', to)
     const { data, error } = await q

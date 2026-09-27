@@ -60,7 +60,13 @@ export default function Invoices() {
     const { data, error } = await supabase
       .from('v_invoice_list')
       .select('*')
+      // Newest first, and the second key is what makes that true. A date alone
+      // leaves same-day documents in whatever order the database happens to
+      // return them, which is insertion order — so the day's rows came back
+      // oldest-first inside a newest-first list. Every document number runs
+      // with time, so it is the tie-break.
       .order('invoice_date', { ascending: false })
+      .order('doc_no', { ascending: false })
       .limit(500)
 
     if (error) {

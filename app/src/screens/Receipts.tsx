@@ -50,7 +50,13 @@ export default function Receipts() {
             ' party:party_id (code, name, route:route_id (name)),' +
             ' collector:collected_by (full_name)',
         )
+        // Newest first, and the second key is what makes that true. A date alone
+        // leaves same-day documents in whatever order the database happens to
+        // return them, which is insertion order — so the day's rows came back
+        // oldest-first inside a newest-first list. Every document number runs
+        // with time, so it is the tie-break.
         .order('receipt_date', { ascending: false })
+        .order('doc_no', { ascending: false })
         .limit(500),
       supabase.from('v_unallocated_credit').select('credit_id, unallocated'),
     ])
