@@ -3,6 +3,7 @@ import { fmtMoney, fmtQty } from '../lib/format'
 import { downloadXlsx } from '../lib/xlsx'
 import type { CellType } from '../lib/xlsx'
 import { Empty, ErrorBanner, Loading } from './ui'
+import type { Sheet } from '../lib/xlsx'
 import { usePrintPage, REPORT_PAGE } from '../lib/printpage'
 
 /**
@@ -50,6 +51,7 @@ export function Report<T>({
   empty,
   fileName,
   footer,
+  extraSheets,
 }: {
   title: string
   subtitle?: string
@@ -64,6 +66,14 @@ export function Report<T>({
   /** Without the extension; the date is added. */
   fileName: string
   footer?: ReactNode
+  /**
+   * More sheets for the Excel file, built when the button is pressed.
+   *
+   * A function rather than a value so the work — grouping, totalling — only
+   * happens on download, and so the sheet is built from whatever is on screen
+   * at that moment rather than from whatever it was when the page rendered.
+   */
+  extraSheets?: () => Sheet<never>[]
 }) {
   usePrintPage(REPORT_PAGE, '10mm')
   const today = new Date().toISOString().slice(0, 10)
@@ -96,6 +106,7 @@ export function Report<T>({
         rows,
         totals,
       },
+      ...(extraSheets?.() ?? []),
     ] as never)
   }
 

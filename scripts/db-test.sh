@@ -108,6 +108,11 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/016_own_order_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Register line tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/018_register_lines_tests.sql" 2>&1 | strip
+
+echo
 echo "==> Safe update tests"
 # Reads what is installed rather than exercising it, so it runs against the
 # database the discount suite just built.

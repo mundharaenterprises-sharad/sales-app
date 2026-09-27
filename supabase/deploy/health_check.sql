@@ -125,6 +125,8 @@ select * from (values
                                            and p.proname = 'order_line_discounts'
                                            and (select count(*) from
                                                  regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
+  ('034', 'sales register at line level',
+                                 to_regclass('public.v_sales_register_lines') is not null),
   ('033', 'orders by master group',
                                  exists (select 1 from information_schema.columns
                                           where table_schema = 'public'
