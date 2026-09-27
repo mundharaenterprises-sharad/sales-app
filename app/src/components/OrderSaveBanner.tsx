@@ -10,12 +10,15 @@ import {
 } from '../lib/ordersave'
 
 /**
- * What became of the order the rep just walked away from.
+ * What became of the order that was just sent.
  *
  * It sits in the layout rather than on the order screen, because by the time
- * the database answers the rep is somewhere else — that is the whole point of
- * saving on the way out. An answer that appeared only on the screen they had
- * already left would be no answer at all.
+ * the database answers the screen has usually closed. An answer that appeared
+ * only on the screen the rep has left would be no answer at all.
+ *
+ * Undo survives the return of the Submit button. Pressing Submit is a decision
+ * and needs no apology, but the rep who realises two seconds later that it was
+ * the wrong shop should not have to hunt for a Cancel button on a list.
  */
 export default function OrderSaveBanner() {
   const [s, setS] = useState<SaveState | null>(null)

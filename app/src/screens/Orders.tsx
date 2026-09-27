@@ -5,6 +5,7 @@ import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useSession } from '../lib/session'
 import { fetchOrderLines, pendingAsLine } from '../lib/billing'
+import { useDialog } from '../components/Dialog'
 
 interface OrderRow {
   order_id: string
@@ -70,13 +71,18 @@ export default function Orders() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [billing, setBilling] = useState<{ done: number; total: number } | null>(null)
   const [results, setResults] = useState<BillResult[] | null>(null)
+  const { dialog, ask } = useDialog()
 
   const load = useCallback(async () => {
     setError(null)
     const { data, error } = await supabase
       .from('v_pending_orders')
       .select('*')
+      // Newest at the top. The second key matters: several orders share a
+      // date, and without it the database returns them in whatever order it
+      // finds them, so a rep's morning round came back shuffled.
       .order('order_date', { ascending: false })
+      .order('doc_no', { ascending: false })
 
     if (error) {
       setError(friendlyMessage(error))
@@ -89,27 +95,43 @@ export default function Orders() {
   useEffect(() => { void load() }, [load])
 
   const cancel = useCallback(
-    async (row: OrderRow) => {
-      const reason = window.prompt(
-        `Cancel ${row.doc_no} for ${row.party_name}?\n\nThe stock it is holding goes back into available. Say why:`,
-      )
-      if (reason === null) return
-      if (!reason.trim()) {
-        setError('A cancellation needs a reason.')
-        return
-      }
-
-      setBusyId(row.order_id)
-      const { error } = await supabase.rpc('cancel_sales_order', {
-        p_order_id: row.order_id,
-        p_reason: reason.trim(),
+    (row: OrderRow) => {
+      ask({
+        title: `Cancel ${row.doc_no}?`,
+        tone: 'warn',
+        body: (
+          <p>
+            <strong>{row.party_name}</strong> — {fmtMoney(row.order_value)}. The stock
+            it is holding goes back into available, and this cannot be undone.
+          </p>
+        ),
+        ask: {
+          label: 'Why is it being cancelled?',
+          placeholder: 'Shop closed, ordered by mistake…',
+          required: true,
+        },
+        actions: [
+          { label: 'Keep the order' },
+          {
+            label: 'Cancel it',
+            tone: 'danger',
+            onPick: async (reason) => {
+              setBusyId(row.order_id)
+              const { error } = await supabase.rpc('cancel_sales_order', {
+                p_order_id: row.order_id,
+                p_reason: reason,
+              })
+              setBusyId(null)
+              // Thrown, not swallowed: the dialog stays open with the reason
+              // still typed in it so the answer can be tried again.
+              if (error) throw new Error(friendlyMessage(error))
+              await load()
+            },
+          },
+        ],
       })
-      setBusyId(null)
-
-      if (error) setError(friendlyMessage(error))
-      else await load()
     },
-    [load],
+    [load, ask],
   )
 
   const filtered = useMemo(() => {
@@ -214,6 +236,7 @@ export default function Orders() {
 
   return (
     <>
+      {dialog}
       <div className="page-head">
         <h1>Orders</h1>
         <span className="sub">Holding stock, waiting to be invoiced</span>
@@ -399,7 +422,7 @@ export default function Orders() {
                         )}
                         <button
                           className="ghost"
-                          onClick={() => void cancel(r)}
+                          onClick={() => cancel(r)}
                           disabled={busyId === r.order_id || !mine(r)}
                           title={mine(r) ? undefined : `${r.rep_name} took this order`}
                         >

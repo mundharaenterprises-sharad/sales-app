@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
 import { fmtMoney, fmtQty, fmtAge } from '../lib/format'
-import { Banner, ErrorBanner, Loading } from '../components/ui'
+import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
+import { useDialog } from '../components/Dialog'
 import { Picker } from '../components/Picker'
 import { useOnline } from '../lib/session'
 import {
@@ -15,6 +16,7 @@ import {
   worthSaving,
   unchanged,
   watchForSignal,
+  currentSaveState,
   type OrderDraft,
 } from '../lib/ordersave'
 
@@ -73,6 +75,7 @@ export default function NewOrder() {
 
   const [picking, setPicking] = useState<'party' | 'product' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   /** The order being edited, and what it looked like before, so Undo can work. */
   const [docNo, setDocNo] = useState<string | null>(null)
@@ -80,6 +83,7 @@ export default function NewOrder() {
   const [loadingOrder, setLoadingOrder] = useState(!!editId)
   /** Set when a draft this device had kept was put back on the screen. */
   const [restored, setRestored] = useState(false)
+  const { dialog, ask } = useDialog()
 
   /**
    * Whatever was left over from last time, claimed on the first render.
@@ -289,6 +293,9 @@ export default function NewOrder() {
 
   // ---------------------------------------------------------------------------
 
+  /** The foot of the item list, so a newly added line can be scrolled to. */
+  const endOfLines = useRef<HTMLDivElement>(null)
+
   const addProduct = useCallback((p: ProductRow) => {
     setLines((ls) => {
       // Adding a product already on the order bumps its quantity rather than
@@ -301,6 +308,11 @@ export default function NewOrder() {
       }
       return [...ls, { product: p, uom: 'BASE', qty: '1', rate: String(p.sale_rate), discPct: '' }]
     })
+    // After the list has grown. Without the wait this scrolls to where the
+    // end of the list used to be, which is the line before the new one.
+    requestAnimationFrame(() =>
+      endOfLines.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }),
+    )
   }, [])
 
   const setLine = (i: number, p: Partial<Line>) =>
@@ -363,6 +375,12 @@ export default function NewOrder() {
   }, [orderDisc, discMode, afterLines])
 
   const total = Math.round((afterLines - orderDiscValue) * 100) / 100
+
+  // To the nearest rupee, the way a bill does it. The rep reads the rounded
+  // figure out at the counter, so it is the one shown large; the exact figure
+  // and the difference sit underneath for anyone who wonders.
+  const rounded = Math.round(total)
+  const roundOff = Math.round((rounded - total) * 100) / 100
 
   const problems = useMemo(() => {
     const out: string[] = []
@@ -437,30 +455,120 @@ export default function NewOrder() {
    * nothing to sell: opening the screen to look up a price and backing out
    * must cost nothing.
    */
-  /** Set when the rep says to throw the order away, so leaving saves nothing. */
-  const abandoned = useRef(false)
-
-  useEffect(() => {
-    return () => {
-      if (abandoned.current || !settledRef.current) return
-      const d = draftRef.current
-      if (!worthSaving(d)) return
-      // An order opened, looked at and left alone is not a change. Sending it
-      // anyway would rebuild its lines and re-reserve its stock for nothing.
-      if (d.orderId && unchanged(d)) return
-      void saveOrder(d)
-    }
-  }, [])
+  /** Set once the order has been dealt with, so leaving asks nothing more. */
+  const settledUp = useRef(false)
 
   /**
-   * The way out that saves nothing. Without a Submit button there has to be
-   * one, or an order added by mistake can only be undone after it exists.
+   * Sending the order.
+   *
+   * The Submit button is the ordinary way. Leaving the screen with an order
+   * still on it asks first — see the leave guard below — and answering "save
+   * it" arrives here too, so there is one path to the database and not two
+   * that can disagree.
    */
+  const submit = useCallback(async () => {
+    const d = draftRef.current
+    if (!worthSaving(d)) return
+    settledUp.current = true
+    setBusy(true)
+    await saveOrder(d)
+    setBusy(false)
+
+    const outcome = currentSaveState()
+
+    // A refusal while the rep is still standing here should be answered here,
+    // not by a strip of text on whatever screen they land on next. The order
+    // stays on the screen, with everything still on it.
+    if (outcome?.state === 'failed') {
+      settledUp.current = false
+      ask({
+        title: 'The order was not saved',
+        tone: 'bad',
+        body: (
+          <p>
+            {outcome.message}. Nothing has been reserved — the order is still
+            here exactly as you left it.
+          </p>
+        ),
+        actions: [
+          { label: 'Change the order' },
+          { label: 'Try again', tone: 'primary', onPick: async () => { await submitRef.current() } },
+        ],
+      })
+      return
+    }
+
+    nav('/orders', { replace: true })
+  }, [nav, ask])
+
+  // submit refers to itself from inside the dialog above, which it cannot do
+  // directly without being defined before it exists.
+  const submitRef = useRef(submit)
+  submitRef.current = submit
+
+  /** Leave without sending anything, and forget the device copy. */
   const discard = useCallback(() => {
-    abandoned.current = true
+    settledUp.current = true
     forgetDraft()
-    nav(editId ? '/orders' : '/orders', { replace: true })
-  }, [nav, editId])
+    nav('/orders', { replace: true })
+  }, [nav])
+
+  /**
+   * Going back with an unsent order on the screen.
+   *
+   * Every way out of this screen is a navigation, and none of them can be
+   * caught individually with any confidence — the phone's back gesture, a tab
+   * in the nav bar, a link. What they have in common is that they all change
+   * the address, so the guard watches for that: it puts a step of its own into
+   * the history, and when that step is popped the rep is asking to leave.
+   *
+   * Nothing is decided here. The rep is asked, and the order stays exactly
+   * where it was until they answer.
+   */
+  useEffect(() => {
+    if (!settled) return
+
+    const SENTINEL = { orderGuard: true }
+    history.pushState(SENTINEL, '', location.href)
+
+    const onPop = () => {
+      if (settledUp.current) return
+      const d = draftRef.current
+      if (!worthSaving(d)) return
+      if (d.orderId && unchanged(d)) return
+
+      // Stay put while the question is on screen.
+      history.pushState(SENTINEL, '', location.href)
+
+      ask({
+        title: editId ? 'Leave without saving the change?' : 'You have not saved this order',
+        tone: 'warn',
+        body: (
+          <p>
+            <strong>{d.party?.party_name}</strong> —{' '}
+            {d.lines.filter((l) => Number(l.qty) > 0).length} item
+            {d.lines.filter((l) => Number(l.qty) > 0).length === 1 ? '' : 's'}.
+          </p>
+        ),
+        actions: [
+          {
+            label: editId ? 'Delete the change' : 'Delete the order',
+            tone: 'danger',
+            onPick: () => { discard() },
+          },
+          { label: 'Keep editing' },
+          {
+            label: editId ? 'Save the change' : 'Save the order',
+            tone: 'primary',
+            onPick: async () => { await submit() },
+          },
+        ],
+      })
+    }
+
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [settled, editId, ask, discard, submit])
 
   // ---------------------------------------------------------------------------
 
@@ -535,10 +643,7 @@ export default function NewOrder() {
 
       {/* --- Lines --------------------------------------------------------- */}
       <div className="card card-pad">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ flex: 1 }}>Items</h2>
-          <button onClick={() => setPicking('product')}>Add item</button>
-        </div>
+        <h2>Items</h2>
 
         {lines.length === 0 ? (
           <p className="sub" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -644,6 +749,21 @@ export default function NewOrder() {
             })}
           </div>
         )}
+
+        {/*
+          Below the list, not above it. A rep adds items one after another, so
+          the button belongs where their thumb already is — at the end of what
+          they have just typed — rather than scrolling back to the top for
+          every line. The marker underneath is what the new line is scrolled to.
+        */}
+        <div ref={endOfLines} />
+        <button
+          className="primary block"
+          style={{ marginTop: 12 }}
+          onClick={() => setPicking('product')}
+        >
+          Add item
+        </button>
       </div>
 
       {/* --- Finish -------------------------------------------------------- */}
@@ -691,40 +811,28 @@ export default function NewOrder() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <div className="sub">Order total</div>
-            <div className="stat">{fmtMoney(total)}</div>
+            <div className="stat">{fmtMoney(rounded)}</div>
             {(lineDiscTotal > 0 || orderDiscValue > 0) && (
               <div className="sub">
                 {fmtMoney(gross)} less {fmtMoney(lineDiscTotal + orderDiscValue)} discount
               </div>
             )}
-          </div>
-
-          {/*
-            There is no Submit button. Going back is what saves the order, and
-            a screen that does something on the way out has to say so where the
-            button used to be — otherwise the rep is left wondering, and wonders
-            by tapping things.
-          */}
-          <div className="save-note" style={{ marginLeft: 'auto' }}>
-            {readyToSave ? (
-              <>
-                <strong>Go back and this is saved.</strong>
-                <div className="sub">
-                  {editId
-                    ? 'The change goes through as you leave the screen.'
-                    : 'The order goes through as you leave the screen. You can undo it straight after.'}
-                </div>
-              </>
-            ) : (
-              <>
-                <strong>Nothing to save yet.</strong>
-                <div className="sub">
-                  {party ? 'Add an item.' : 'Choose a customer and add an item.'} Leaving
-                  now saves nothing.
-                </div>
-              </>
+            {roundOff !== 0 && (
+              <div className="sub">
+                {fmtMoney(total)} rounded {roundOff > 0 ? 'up' : 'down'} by{' '}
+                {fmtMoney(Math.abs(roundOff))}
+              </div>
             )}
           </div>
+
+          <button
+            className="primary"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => void submit()}
+            disabled={!readyToSave || busy}
+          >
+            {busy ? <Spinner /> : editId ? 'Save the change' : 'Submit order'}
+          </button>
         </div>
 
         {problems.length > 0 && (
@@ -743,6 +851,8 @@ export default function NewOrder() {
           </div>
         )}
       </div>
+
+      {dialog}
 
       {/* --- Pickers ------------------------------------------------------- */}
       {picking === 'party' && (

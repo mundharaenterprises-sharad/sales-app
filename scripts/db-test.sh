@@ -98,6 +98,11 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/014_order_discount_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Cash sale tests"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/017_cash_sale_tests.sql" 2>&1 | strip
+
+echo
 echo "==> Own order tests"
 rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/016_own_order_tests.sql" 2>&1 | strip

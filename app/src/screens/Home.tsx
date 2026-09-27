@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useSession } from '../lib/session'
-import { fmtQty } from '../lib/format'
+import { fmtQty, fmtMoney } from '../lib/format'
 import { Loading } from '../components/ui'
 import { onUpdateWaiting, applyUpdate, checkForUpdate, buildLabel } from '../lib/updates'
 
@@ -10,6 +10,9 @@ interface Counts {
   products: number
   parties: number
   lowStock: number
+  /** Orders taken and not yet billed: goods promised, money not yet earned. */
+  openOrders: number
+  openValue: number
 }
 
 export default function Home() {
@@ -24,18 +27,24 @@ export default function Home() {
     let alive = true
 
     async function load() {
-      const [products, parties, low] = await Promise.all([
+      const [products, parties, low, open] = await Promise.all([
         supabase.from('product').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('party').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('v_stock_report').select('product_id', { count: 'exact', head: true })
           .eq('is_active', true).lte('available', 0),
+        // Summed here rather than in a view: it is one number off a list the
+        // app already reads, and a view for it would be a view to keep.
+        supabase.from('v_pending_orders').select('order_value'),
       ])
 
       if (!alive) return
+      const openRows = (open.data ?? []) as { order_value: number }[]
       setCounts({
         products: products.count ?? 0,
         parties: parties.count ?? 0,
         lowStock: low.count ?? 0,
+        openOrders: openRows.length,
+        openValue: openRows.reduce((t, r) => t + Number(r.order_value || 0), 0),
       })
     }
 
@@ -77,6 +86,21 @@ export default function Home() {
             <h3>Parties</h3>
             <div className="stat">{fmtQty(counts.parties)}</div>
             <p>on the books</p>
+          </Link>
+
+          {/*
+            Goods promised and not yet billed. Worth a tile of its own: it is
+            the one figure that says how much work the office still owes the
+            field, and it is stock that cannot be sold to anybody else.
+          */}
+          <Link className="tile" to="/orders">
+            <h3>Open orders</h3>
+            <div className="stat">{fmtMoney(counts.openValue)}</div>
+            <p>
+              {counts.openOrders === 0
+                ? 'nothing waiting to be billed'
+                : `${counts.openOrders} order${counts.openOrders === 1 ? '' : 's'} waiting to be billed`}
+            </p>
           </Link>
         </div>
       )}

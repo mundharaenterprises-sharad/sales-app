@@ -9,6 +9,7 @@ import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { AgePill } from '../components/AgePill'
 
 interface InvoiceRow {
+  is_cash: boolean
   invoice_id: string
   doc_no: string
   party_id: string
@@ -331,7 +332,9 @@ export default function Invoices() {
                           <AgePill days={r.days_outstanding} />
                         </span>
                       ) : (
-                        <span className="pill good">Settled</span>
+                        <span className={`pill ${r.is_cash ? 'good' : 'flat'}`}>
+                          {r.is_cash ? 'Cash' : 'Settled'}
+                        </span>
                       )}
                     </td>
                     <td data-label="" className="num">

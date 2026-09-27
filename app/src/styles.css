@@ -627,7 +627,10 @@ table.bill-lines .small { font-size: 9px; }
   */
   .topbar, .nav, .no-print, .banner { display: none !important; }
   body, .app, main { background: #fff; }
-  main { padding: 0; max-width: none; }
+  /* The padding is set by usePrintPage(), because the page margin is zero —
+     that is what stops the browser printing its own header and footer over
+     the top and bottom of every bill. */
+  main { max-width: none; }
 
   .sheet-a5 {
     border: none; box-shadow: none; border-radius: 0; padding: 0;
@@ -726,3 +729,61 @@ table.data tr.active-row td { background: var(--navy-100); box-shadow: inset 3px
 @media (max-width: 560px) {
   .save-note { text-align: left; max-width: none; margin-left: 0 !important; }
 }
+
+/* --- Dialogs: a question, and the ways out of it -------------------------- */
+
+.dialog-head.warn { background: var(--warn-bg); }
+.dialog-head.bad  { background: var(--bad-bg); }
+.dialog-head.warn h2 { color: var(--warn); }
+.dialog-head.bad h2  { color: var(--bad); }
+.dialog-body { padding: 16px; }
+.dialog-body > p:first-child { margin-top: 0; }
+.dialog-foot { flex-wrap: wrap; justify-content: flex-end; }
+/* The expected answer sits on the right, where a thumb already is. */
+.dialog-foot .primary { order: 2; }
+.dialog-foot .ghost { order: 1; }
+.dialog-foot .ghost.danger { color: var(--bad); }
+.dialog-problem {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bad-bg);
+  color: var(--bad);
+  font-size: 13.5px;
+}
+.dialog-choice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.dialog-choice .strong { display: block; margin-bottom: 6px; }
+.dialog-choice .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* A picker opens from the top, so the keyboard cannot cover its results. */
+.sheet-backdrop.sheet-top { align-items: flex-start; }
+.sheet-picker { border-radius: 0 0 14px 14px; max-height: 88vh; }
+@media (min-width: 700px) {
+  .sheet-backdrop.sheet-top { align-items: flex-start; padding: 24px; }
+  .sheet-picker { border-radius: 14px; }
+}
+/* The search box stays put while the results scroll under it. */
+.sheet-picker .sheet-head, .sheet-picker .sheet-search { flex: 0 0 auto; }
+
+/* Two buttons where one is always lit: for a choice that must not be half-read. */
+.segmented { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--radius-sm); overflow: hidden; }
+.segmented button {
+  min-width: 96px; border: 0; border-radius: 0; background: var(--surface);
+  color: var(--ink-2); font-weight: 650; box-shadow: none;
+}
+.segmented button + button { border-left: 1px solid var(--line-2); }
+.segmented button.on { background: var(--navy-800); color: #fff; }
+.segmented button.on.cash { background: var(--good); }
+
+/* A cash bill says so on the customer's copy — it is their receipt too. */
+.bill-paid {
+  font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  color: var(--good); border: 1.5px solid var(--good);
+  padding: 1px 6px; display: inline-block; margin-bottom: 3px;
+}
+@media print { .bill-paid { font-size: 9pt; color: #000; border-color: #000; } }

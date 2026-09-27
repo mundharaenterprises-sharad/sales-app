@@ -4,7 +4,7 @@ import { supabase, friendlyMessage } from '../lib/supabase'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
-import { usePrintPage, BILL_PAGE } from '../lib/printpage'
+import { usePrintPage, useDocumentTitle, BILL_PAGE } from '../lib/printpage'
 
 /**
  * Several bills as one print job: one bill per A5 sheet, one trip to the
@@ -17,6 +17,9 @@ export default function InvoicePrintBatch() {
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean)
 
   const [bills, setBills] = useState<Bill[] | null>(null)
+
+  // If the browser insists on printing a title, let it be about the bills.
+  useDocumentTitle(bills && bills.length ? `${bills.length} bills` : null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -45,6 +48,8 @@ export default function InvoicePrintBatch() {
     return () => {
       alive = false
     }
+    // Runs once per set of ids. Re-fetching on anything else would reorder
+    // a pile of bills somebody is halfway through printing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
 

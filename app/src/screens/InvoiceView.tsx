@@ -6,7 +6,7 @@ import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
 import { useSession } from '../lib/session'
-import { usePrintPage, BILL_PAGE } from '../lib/printpage'
+import { usePrintPage, useDocumentTitle, BILL_PAGE } from '../lib/printpage'
 
 /**
  * One bill, laid out as it prints.
@@ -37,6 +37,9 @@ export default function InvoiceView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // If the browser insists on printing a title, let it be the bill's number.
+  useDocumentTitle(inv?.doc_no ?? null)
+
   const load = useCallback(async () => {
     setError(null)
     const [i, l] = await Promise.all([
@@ -54,7 +57,15 @@ export default function InvoiceView() {
       setError(friendlyMessage(i.error))
       return
     }
-    setInv(i.data as unknown as Bill)
+    // Defensive, and it earned its place: a reply that is not a bill used to
+    // render as a white screen with a console error, because everything below
+    // reads bill.party.name. A missing bill should say so.
+    const row = i.data as unknown as Bill | null
+    if (!row || !row.doc_no || !row.party) {
+      setError('That bill could not be found.')
+      return
+    }
+    setInv(row)
     if (!l.error) setLink(l.data as typeof link)
   }, [id])
 
@@ -134,6 +145,14 @@ export default function InvoiceView() {
 
       <div className="no-print">
         <ErrorBanner error={error} />
+
+        {inv?.is_cash && inv.status !== 'CANCELLED' && (
+          <Banner tone="info">
+            <strong>Cash sale.</strong> The money was taken with the bill, so this
+            customer owes nothing for it. Cancelling the bill will not hand the
+            cash back — it stays on their account as credit.
+          </Banner>
+        )}
         {justCreated && (
           <Banner tone="info">
             Bill <strong>{justCreated}</strong> saved. The goods have left stock and

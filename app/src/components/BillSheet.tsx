@@ -24,6 +24,8 @@ export interface BillLineRow {
 }
 
 export interface Bill {
+  /** Paid as it was raised. The customer's copy should say so. */
+  is_cash?: boolean
   id: string
   doc_no: string
   invoice_date: string
@@ -78,6 +80,9 @@ export function BillSheet({
         <div className="bill-meta">
           {bill.status === 'CANCELLED' && (
             <div className="bill-cancelled">CANCELLED</div>
+          )}
+          {bill.is_cash && bill.status !== 'CANCELLED' && (
+            <div className="bill-paid">PAID · CASH</div>
           )}
           <div><strong>{bill.doc_no}</strong></div>
           <div>{fmtDate(bill.invoice_date)}</div>

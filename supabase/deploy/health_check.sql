@@ -125,6 +125,18 @@ select * from (values
                                            and p.proname = 'order_line_discounts'
                                            and (select count(*) from
                                                  regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
+  ('032', 'cash sales and order rounding',
+                                 to_regprocedure('public.create_sales_invoice(date,jsonb,uuid,uuid,numeric,numeric,text,boolean)') is not null
+                             and to_regprocedure('public.create_sales_invoice(date,jsonb,uuid,uuid,numeric,numeric,text)') is null
+                             and to_regprocedure('app.create_sales_invoice_core(date,jsonb,uuid,uuid,numeric,numeric,text)') is not null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_invoice'
+                                            and column_name = 'is_cash')
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'sales_order'
+                                            and column_name = 'round_off')),
   ('031', 'own orders',         to_regprocedure('app.require_own_order_if_rep(uuid,text)') is not null
                              and to_regclass('public.v_order_for_edit') is not null
                              and exists (select 1 from information_schema.columns

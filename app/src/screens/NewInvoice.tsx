@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { fmtMoney, fmtQty } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
+import { useDialog } from '../components/Dialog'
 import { Picker } from '../components/Picker'
 import { Check, num } from '../components/FormSheet'
 
@@ -144,7 +145,18 @@ export default function NewInvoice() {
   const [picking, setPicking] = useState<null | 'party' | 'product'>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [shortfalls, setShortfalls] = useState<Shortfall[] | null>(null)
+  const { dialog, ask, close } = useDialog()
+
+  /**
+   * Cash or credit.
+   *
+   * Credit by default, because that is what a distributor's round mostly is:
+   * goods today, money on the next visit. A cash sale is the exception the rep
+   * has to reach for, which is the right way round — a bill wrongly marked
+   * cash books a payment that never happened, and that is the error worth
+   * making harder.
+   */
+  const [isCash, setIsCash] = useState(false)
 
   // ---------------------------------------------------------------------------
   // Load
@@ -323,6 +335,8 @@ export default function NewInvoice() {
     return () => {
       alive = false
     }
+    // Runs once for the order being billed. Re-running would rebuild the
+    // lines and throw away the quantities the biller has already changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, reviseId])
 
@@ -402,55 +416,125 @@ export default function NewInvoice() {
   /** What the rep wrote on the order, for the line under the discount box. */
   const quoted = order?.bill_discount_pct ? Number(order.bill_discount_pct) : null
 
+
+  /**
+   * Something on the bill is wrong and the rep has to change it.
+   *
+   * A dialog rather than the strip at the top of the page: on a phone the
+   * Save button is at the bottom of a long bill, so a message at the top is
+   * off-screen at the exact moment it matters. One way out, back to the form.
+   */
+  const problem = useCallback(
+    (message: string) => ask({
+      title: 'This bill cannot be saved yet',
+      tone: 'warn',
+      body: <p>{message}</p>,
+      actions: [{ label: 'Let me fix it', tone: 'primary' }],
+    }),
+    [ask],
+  )
+
+
+  /**
+   * What the rep can do about stock that went while they were typing.
+   *
+   * Both act on the line and leave the bill on screen: the point of offering
+   * a choice is that the next step is one tap, not a hunt back through the
+   * list for the item the message named.
+   */
+  const reduceTo = useCallback((f: Shortfall) => {
+    setLines((ls) =>
+      ls.map((l) => {
+        if (l.code !== f.product_code) return l
+        // The figure from the database is in base units. A line being billed
+        // in boxes cannot always take it: what is left may not fill one, in
+        // which case the line changes to pieces rather than rounding to zero
+        // and silently vanishing.
+        if (l.uom === 'PACK' && Number(f.on_hand) < l.packSize) {
+          return { ...l, uom: 'BASE' as const, qty: String(f.on_hand) }
+        }
+        const per = l.uom === 'PACK' ? l.packSize : 1
+        return { ...l, qty: String(Math.floor(Number(f.on_hand) / per)) }
+      }),
+    )
+  }, [])
+
+  const dropItem = useCallback((f: Shortfall) => {
+    setLines((ls) =>
+      ls.map((l) => (l.code === f.product_code ? { ...l, include: false, qty: '0' } : l)),
+    )
+  }, [])
+
   // ---------------------------------------------------------------------------
   // Save
   // ---------------------------------------------------------------------------
 
   const save = useCallback(async () => {
     setError(null)
-    setShortfalls(null)
 
     if (!party) {
-      setError('Choose a customer first.')
+      problem('Choose a customer first.')
       return
     }
     if (active.length === 0) {
-      setError('A bill needs at least one item.')
+      problem('A bill needs at least one item.')
       return
     }
     for (const l of active) {
       const q = num(l.qty, NaN)
       const r = num(l.rate, NaN)
       if (Number.isNaN(q) || q <= 0) {
-        setError(`${l.name}: quantity must be a number above zero.`)
+        problem(`${l.name}: quantity must be a number above zero.`)
         return
       }
       if (Number.isNaN(r) || r < 0) {
-        setError(`${l.name}: rate must be a plain number.`)
+        problem(`${l.name}: rate must be a plain number.`)
         return
       }
       const pct = num(l.discPct, 0)
       if (Number.isNaN(pct) || pct < 0 || pct > 100) {
-        setError(`${l.name}: discount must be between 0 and 100 per cent.`)
+        problem(`${l.name}: discount must be between 0 and 100 per cent.`)
         return
       }
       if (l.pendingBase !== null && baseQty(l) > l.pendingBase) {
-        setError(
+        problem(
           `${l.name}: the order has only ${fmtQty(l.pendingBase)} ${l.baseUom} left to bill.`,
         )
         return
       }
       const s = stockFor(l.productId)
       if (!reviseId && s && baseQty(l) > Number(s.on_hand)) {
-        setError(
+        problem(
           `${l.name}: only ${fmtQty(s.on_hand)} ${l.baseUom} in stock. Reduce the quantity.`,
         )
         return
       }
     }
     if (billDiscValue > afterLines) {
-      setError('The bill discount is larger than the bill.')
+      problem('The bill discount is larger than the bill.')
       return
+    }
+
+    // A cash bill records money as received. Worth one question, because it
+    // cannot be undone by editing the bill — only by cancelling the receipt.
+    if (isCash && !reviseId) {
+      const go = await new Promise<boolean>((resolve) => {
+        ask({
+          title: 'Taking the money now?',
+          body: (
+            <p>
+              <strong>{fmtMoney(net)}</strong> from {party.party_name}, recorded as
+              received today. They will owe nothing for this bill.
+            </p>
+          ),
+          actions: [
+            { label: 'No, it is credit', onPick: () => { setIsCash(false); resolve(false) } },
+            { label: 'Yes, cash received', tone: 'primary', onPick: () => resolve(true) },
+          ],
+          onDismiss: () => resolve(false),
+        })
+      })
+      if (!go) return
     }
 
     setBusy(true)
@@ -479,16 +563,51 @@ export default function NewInvoice() {
           p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
           p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
           p_remarks: remarks.trim() || null,
+          p_is_cash: isCash,
         })
 
     if (error) {
       const de = asDbError(error)
-      if (de.code === 'SA001' && Array.isArray(de.details)) {
-        setShortfalls(de.details as Shortfall[])
-      } else {
-        setError(friendlyMessage(error))
-      }
       setBusy(false)
+
+      if (de.code === 'SA001' && Array.isArray(de.details)) {
+        const short = de.details as Shortfall[]
+        ask({
+          title: short.length === 1 ? 'Not enough stock' : `Not enough of ${short.length} items`,
+          tone: 'bad',
+          body: (
+            <>
+              <p>
+                Somebody else took the stock while this bill was being written.
+                <strong> Nothing has been billed</strong> — the goods are still here.
+              </p>
+              {short.map((f) => (
+                <div key={f.product_code} className="dialog-choice">
+                  <span className="strong">{f.product_name}</span>
+                  <span className="sub">
+                    Asked for {fmtQty(f.requested)} {f.base_uom}, only{' '}
+                    {fmtQty(f.on_hand)} left.
+                  </span>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    {Number(f.on_hand) > 0 && (
+                      <button onClick={() => { reduceTo(f); close() }}>
+                        Bill {fmtQty(f.on_hand)} {f.base_uom}
+                      </button>
+                    )}
+                    <button className="ghost" onClick={() => { dropItem(f); close() }}>
+                      Take it off the bill
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          ),
+          actions: [{ label: 'Leave the bill as it is', tone: 'primary' }],
+        })
+        return
+      }
+
+      problem(friendlyMessage(error))
       return
     }
 
@@ -497,8 +616,13 @@ export default function NewInvoice() {
       replace: true,
       state: { justCreated: res.doc_no, replaced: res.replaced_doc_no },
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [party, active, billDisc, billDiscValue, afterLines, discMode, invoiceDate, orderId, reviseId, remarks, nav, stockFor])
+    // No eslint-disable here any more. It was hiding a missing dependency, and
+    // this is the third time in this project that a state variable left out of
+    // a dependency array has meant a screen sending the value it had when the
+    // callback was built rather than the one on the screen — an order with no
+    // discount, and now very nearly a cash sale saved as credit.
+  }, [party, active, billDisc, billDiscValue, afterLines, discMode, invoiceDate,
+      orderId, reviseId, remarks, nav, stockFor, isCash, ask, problem])
 
   // ---------------------------------------------------------------------------
 
@@ -511,6 +635,7 @@ export default function NewInvoice() {
 
   return (
     <>
+      {dialog}
       <div className="page-head">
         <h1>
           {replacing
@@ -538,21 +663,6 @@ export default function NewInvoice() {
           new bill gets the next number; the old one stays on record as
           cancelled. Only possible today, and only while no payment has been put
           against it.
-        </Banner>
-      )}
-
-      {shortfalls && (
-        <Banner tone="bad">
-          <strong>Not enough stock.</strong> Nothing has been billed. Reduce these
-          and try again:
-          <ul style={{ margin: '8px 0 0 18px' }}>
-            {shortfalls.map((s) => (
-              <li key={s.product_code}>
-                {s.product_name}: asked for {fmtQty(s.requested)} {s.base_uom}, only{' '}
-                {fmtQty(s.on_hand)} on hand
-              </li>
-            ))}
-          </ul>
         </Banner>
       )}
 
@@ -749,6 +859,46 @@ export default function NewInvoice() {
                 )}
               </div>
             </div>
+
+            {/*
+              Not a tick box. A tick box says "and also this", and this is the
+              difference between money in the drawer and money on the books —
+              so it is two buttons and one of them is always lit, which cannot
+              be half-read at a glance.
+            */}
+            {!reviseId && (
+              <div className="field">
+                <label id="pay-label">How is it being paid?</label>
+                <div className="segmented" role="group" aria-labelledby="pay-label">
+                  <button
+                    type="button"
+                    className={!isCash ? 'on' : undefined}
+                    aria-pressed={!isCash}
+                    onClick={() => setIsCash(false)}
+                  >
+                    Credit
+                  </button>
+                  <button
+                    type="button"
+                    className={isCash ? 'on cash' : undefined}
+                    aria-pressed={isCash}
+                    onClick={() => setIsCash(true)}
+                  >
+                    Cash
+                  </button>
+                </div>
+                <div className="hint">
+                  {isCash ? (
+                    <>
+                      <strong>{fmtMoney(net)}</strong> is being taken now. The payment is
+                      recorded with the bill, so this customer will owe nothing for it.
+                    </>
+                  ) : (
+                    'Goods now, money later. It goes onto what the customer owes.'
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="inv-remarks">Remarks</label>
