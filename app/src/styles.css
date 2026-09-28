@@ -619,17 +619,17 @@ table.bill-lines .small { font-size: 9px; }
 
 @media print {
   /*
-    The paper size is NOT set here. @page belongs to the document, not to a
-    selector, so a second @page further down this file would silently take
-    over the bill — which is exactly what happened when reports arrived and
-    bills started coming out of the printer sideways. Each screen now declares
-    its own page through usePrintPage() in lib/printpage.ts.
+    Neither the paper size nor the white border is set here. @page belongs to
+    the document, not to a selector, so a second @page further down this file
+    would silently take over the bill — which is what happened when reports
+    arrived and bills started printing sideways. And where the border comes
+    from differs between a bill and a report, for reasons that only show up on
+    page two of a batch. Both live in lib/printpage.ts; read the note there
+    before changing anything about printing.
   */
   .topbar, .nav, .no-print, .banner { display: none !important; }
   body, .app, main { background: #fff; }
-  /* The padding is set by usePrintPage(), because the page margin is zero —
-     that is what stops the browser printing its own header and footer over
-     the top and bottom of every bill. */
+  /* Padding is set by useBillPage() / useReportPage(); see printpage.ts. */
   main { max-width: none; }
 
   .sheet-a5 {

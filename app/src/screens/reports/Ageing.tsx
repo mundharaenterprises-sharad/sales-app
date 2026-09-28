@@ -53,6 +53,26 @@ export default function AgeingReport() {
   const [master, setMaster] = useState('')
   const [splitGroups, setSplitGroups] = useState(false)
   const [q, setQ] = useState('')
+
+  /**
+   * One bucket at a time.
+   *
+   * "Past 15 days only" answers "who is late at all". Chasing money is a
+   * narrower job than that: today you work the 46-plus list and tomorrow the
+   * 31-45 list, and a report that shows all four columns for every customer
+   * makes you read past three of them on every line. Choosing a bucket keeps
+   * only the customers with money sitting in it, and sorts by that bucket
+   * rather than by the total, so the biggest problem in the bucket you are
+   * working is at the top.
+   */
+  const [bucket, setBucket] = useState<'' | 'b_0_15' | 'b_16_30' | 'b_31_45' | 'b_46_plus'>('')
+
+  const BUCKETS = [
+    { key: 'b_0_15', label: '0–15 days' },
+    { key: 'b_16_30', label: '16–30 days' },
+    { key: 'b_31_45', label: '31–45 days' },
+    { key: 'b_46_plus', label: '46 days and over' },
+  ] as const
   const { masters } = useMasterGroups()
 
   const [parties, setParties] = useState<PartyRow[] | null>(null)
@@ -111,9 +131,18 @@ export default function AgeingReport() {
       if (overdueOnly && Number(p.b_16_30) + Number(p.b_31_45) + Number(p.b_46_plus) <= 0) {
         return false
       }
+      if (bucket && Number(p[bucket] ?? 0) <= 0) return false
       return true
     })
-  }, [parties, pmRows, route, overdueOnly, useMaster, master, q])
+      // Within a chosen bucket, most owing in THAT bucket first. Sorting by
+      // the overall total would put a customer who owes a lot recently above
+      // one whose smaller debt has gone stale, which is backwards when the
+      // point of choosing a bucket is to work the stale ones.
+      .sort((a, b) =>
+        bucket
+          ? Number(b[bucket] ?? 0) - Number(a[bucket] ?? 0)
+          : Number(b.total_outstanding ?? 0) - Number(a.total_outstanding ?? 0))
+  }, [parties, pmRows, route, overdueOnly, useMaster, master, q, bucket])
 
   // With a group chosen, the route summary has to be rebuilt from the finer
   // rows — the stored one covers every group at once.
@@ -216,6 +245,17 @@ export default function AgeingReport() {
           <Check id="split-groups" checked={splitGroups} onChange={setSplitGroups}>
             A line per group
           </Check>
+          <select
+            value={bucket}
+            aria-label="Filter by ageing bucket"
+            onChange={(e) => setBucket(e.target.value as typeof bucket)}
+            style={{ width: 'auto', minWidth: 150 }}
+          >
+            <option value="">Every bucket</option>
+            {BUCKETS.map((b) => (
+              <option key={b.key} value={b.key}>{b.label}</option>
+            ))}
+          </select>
           <Check id="overdue" checked={overdueOnly} onChange={setOverdueOnly}>
             Past 15 days only
           </Check>
@@ -247,7 +287,14 @@ export default function AgeingReport() {
   ) : (
     <Report<PartyRow>
       title="Outstanding by party"
-      subtitle={`${master ? `${master} · ` : ''}as at ${new Date().toLocaleDateString('en-GB')}`}
+      // The chosen bucket belongs in the subtitle, because it is also what the
+      // printout and the Excel file are titled — a page headed "Outstanding by
+      // party" that silently covers only the 46-plus list is a trap.
+      subtitle={
+        `${master ? `${master} · ` : ''}` +
+        `${bucket ? `${BUCKETS.find((b) => b.key === bucket)!.label} · ` : ''}` +
+        `as at ${new Date().toLocaleDateString('en-GB')}`
+      }
       filters={filters}
       columns={partyCols}
       rows={partyRows}

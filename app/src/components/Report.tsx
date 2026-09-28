@@ -4,7 +4,7 @@ import { downloadXlsx } from '../lib/xlsx'
 import type { CellType } from '../lib/xlsx'
 import { Empty, ErrorBanner, Loading } from './ui'
 import type { Sheet } from '../lib/xlsx'
-import { usePrintPage, REPORT_PAGE } from '../lib/printpage'
+import { useReportPage, useDocumentTitle } from '../lib/printpage'
 
 /**
  * One definition, two outputs.
@@ -75,7 +75,9 @@ export function Report<T>({
    */
   extraSheets?: () => Sheet<never>[]
 }) {
-  usePrintPage(REPORT_PAGE, '10mm')
+  useReportPage()
+  // A report's printed header is expected, so make it say what the report is.
+  useDocumentTitle(title)
   const today = new Date().toISOString().slice(0, 10)
 
   /**

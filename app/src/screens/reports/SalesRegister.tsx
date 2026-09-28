@@ -198,12 +198,17 @@ export default function SalesRegister() {
       rep && rep,
     ].filter(Boolean).join(' · ')
 
-    return [{
-      name: 'Products',
-      title:
-        `Sold by product${where ? ` — ${where}` : ''}` +
-        `${from || to ? ` — ${fmtDate(from)} to ${fmtDate(to)}` : ''}`,
+    /** Whole packs, and what is left over. No pack means it is all loose. */
+    const sheetFor = (
+      name: string,
+      title: string,
+      rows: ProductTotal[],
+      extra: { header: string; value: (t: ProductTotal) => string; width: number }[] = [],
+    ) => ({
+      name,
+      title,
       columns: [
+        ...extra,
         { header: 'Code', value: (t: ProductTotal) => t.product_code, width: 12 },
         { header: 'Product', value: (t: ProductTotal) => t.product_name, width: 32 },
         { header: 'Group', value: (t: ProductTotal) => t.group_name, width: 16 },
@@ -216,14 +221,72 @@ export default function SalesRegister() {
         { header: 'Bills', value: (t: ProductTotal) => t.bills.size, type: 'number', width: 8 },
         { header: 'Value', value: (t: ProductTotal) => t.value, type: 'money', width: 14 },
       ],
-      rows: totals,
+      rows,
       totals: [
+        ...extra.map(() => ''),
         'Total', '', '', '', null, '', null, '',
-        totals.reduce((s, t) => s + t.qty_base, 0),
-        new Set(src.map((l) => l.invoice_id)).size,
-        totals.reduce((s, t) => s + t.value, 0),
+        rows.reduce((s2, t) => s2 + t.qty_base, 0),
+        null,
+        rows.reduce((s2, t) => s2 + t.value, 0),
       ],
-    }] as unknown as Sheet<never>[]
+    })
+
+    const period = from || to ? ` — ${fmtDate(from)} to ${fmtDate(to)}` : ''
+
+    /**
+     * A second grouping: who sold it.
+     *
+     * The same totals cut by salesman rather than summed over all of them, so
+     * a rep's round can be checked against what the company was told went out.
+     * A bill raised over the counter has no rep behind it and is its own line
+     * rather than a blank — a blank in a column somebody is about to total by
+     * hand is how a counter round goes missing.
+     */
+    const bySalesman = new Map<string, Map<string, ProductTotal>>()
+    for (const l of src) {
+      const who = l.rep_name ?? COUNTER
+      const forWho = bySalesman.get(who) ?? new Map<string, ProductTotal>()
+      const t = forWho.get(l.product_code) ?? {
+        product_code: l.product_code,
+        product_name: l.product_name,
+        group_name: l.group_name,
+        masters: new Set<string>(),
+        base_uom: l.base_uom,
+        pack_uom: l.pack_uom ?? '',
+        pack_size: Number(l.pack_size) || 1,
+        qty_base: 0,
+        value: 0,
+        bills: new Set<string>(),
+      }
+      if (l.master_name) t.masters.add(l.master_name)
+      t.qty_base += Number(l.qty_base) || 0
+      t.value += Number(l.net_amount) || 0
+      t.bills.add(l.invoice_id)
+      forWho.set(l.product_code, t)
+      bySalesman.set(who, forWho)
+    }
+
+    const salesmanRows: ProductTotal[] = []
+    const salesmanOf = new Map<ProductTotal, string>()
+    for (const who of [...bySalesman.keys()].sort()) {
+      const rows = [...bySalesman.get(who)!.values()].sort(
+        (x, y) => y.value - x.value || x.product_name.localeCompare(y.product_name),
+      )
+      for (const r of rows) {
+        salesmanOf.set(r, who)
+        salesmanRows.push(r)
+      }
+    }
+
+    return [
+      sheetFor('Products', `Sold by product${where ? ` — ${where}` : ''}${period}`, totals),
+      sheetFor(
+        'By salesman',
+        `Sold by salesman and product${where ? ` — ${where}` : ''}${period}`,
+        salesmanRows,
+        [{ header: 'Salesman', value: (t: ProductTotal) => salesmanOf.get(t) ?? '', width: 20 }],
+      ),
+    ] as unknown as Sheet<never>[]
   }, [lines, route, master, rep, masters, from, to])
 
   const cols: ReportColumn<Row>[] = [
@@ -266,8 +329,8 @@ export default function SalesRegister() {
       extraSheets={productSheet}
       footer={
         lines && lines.length > 0 ? (
-          <>the Excel download has a second sheet, <strong>Products</strong>, with
-          what each product sold in cartons and loose</>
+          <>the Excel download has two more sheets: <strong>Products</strong>, and
+          <strong> By salesman</strong> — each product in cartons and loose</>
         ) : undefined
       }
       filters={

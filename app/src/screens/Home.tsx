@@ -13,10 +13,18 @@ interface Counts {
   /** Orders taken and not yet billed: goods promised, money not yet earned. */
   openOrders: number
   openValue: number
+  todaySales: number
+  todayBills: number
+  monthSales: number
+  monthBills: number
 }
 
 export default function Home() {
-  const { user } = useSession()
+  const { user, can } = useSession()
+  // The day's and the month's takings are the office's business. A rep can
+  // already see what they owe and what is on order; the whole firm's turnover
+  // on their phone is a different thing, and not one that was asked for.
+  const seesTurnover = can('ACCOUNTS', 'ADMIN')
   const [counts, setCounts] = useState<Counts | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
   const [checked, setChecked] = useState(false)
@@ -27,7 +35,10 @@ export default function Home() {
     let alive = true
 
     async function load() {
-      const [products, parties, low, open] = await Promise.all([
+      const today = new Date().toISOString().slice(0, 10)
+      const monthStart = today.slice(0, 8) + '01'
+
+      const [products, parties, low, open, sales] = await Promise.all([
         supabase.from('product').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('party').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('v_stock_report').select('product_id', { count: 'exact', head: true })
@@ -35,22 +46,40 @@ export default function Home() {
         // Summed here rather than in a view: it is one number off a list the
         // app already reads, and a view for it would be a view to keep.
         supabase.from('v_pending_orders').select('order_value'),
+        // The month to date, which covers today as well — so today's figure
+        // comes out of the same rows and the two tiles cannot disagree.
+        seesTurnover
+          ? supabase
+              .from('v_sales_register')
+              .select('invoice_date, net_total, status')
+              .gte('invoice_date', monthStart)
+              .neq('status', 'CANCELLED')
+          : Promise.resolve({ data: [], error: null }),
       ])
 
       if (!alive) return
       const openRows = (open.data ?? []) as { order_value: number }[]
+      const saleRows = (sales.data ?? []) as { invoice_date: string; net_total: number }[]
+      const todayRows = saleRows.filter((r) => r.invoice_date === today)
+      const money = (rs: { net_total: number }[]) =>
+        rs.reduce((t, r) => t + Number(r.net_total || 0), 0)
+
       setCounts({
         products: products.count ?? 0,
         parties: parties.count ?? 0,
         lowStock: low.count ?? 0,
         openOrders: openRows.length,
         openValue: openRows.reduce((t, r) => t + Number(r.order_value || 0), 0),
+        todaySales: money(todayRows),
+        todayBills: todayRows.length,
+        monthSales: money(saleRows),
+        monthBills: saleRows.length,
       })
     }
 
     void load()
     return () => { alive = false }
-  }, [])
+  }, [seesTurnover])
 
   const firstName = user?.full_name?.split(' ')[0] ?? ''
 
@@ -73,6 +102,28 @@ export default function Home() {
         </div>
       ) : (
         <div className="tiles">
+          {seesTurnover && (
+            <>
+          <Link className="tile" to="/reports/sales">
+            <h3>Sold today</h3>
+            <div className="stat">{fmtMoney(counts.todaySales)}</div>
+            <p>
+              {counts.todayBills === 0
+                ? 'nothing billed yet'
+                : `${counts.todayBills} bill${counts.todayBills === 1 ? '' : 's'}`}
+            </p>
+          </Link>
+
+          <Link className="tile" to="/reports/sales">
+            <h3>This month</h3>
+            <div className="stat">{fmtMoney(counts.monthSales)}</div>
+            <p>
+              {counts.monthBills} bill{counts.monthBills === 1 ? '' : 's'} since the 1st
+            </p>
+          </Link>
+            </>
+          )}
+
           <Link className="tile" to="/stock">
             <h3>Stock</h3>
             <div className="stat">{fmtQty(counts.products)}</div>

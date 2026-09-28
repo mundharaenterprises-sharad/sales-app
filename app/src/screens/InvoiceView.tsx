@@ -6,7 +6,7 @@ import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
 import { useSession } from '../lib/session'
-import { usePrintPage, useDocumentTitle, BILL_PAGE } from '../lib/printpage'
+import { useBillPage, useDocumentTitle } from '../lib/printpage'
 
 /**
  * One bill, laid out as it prints.
@@ -17,7 +17,7 @@ import { usePrintPage, useDocumentTitle, BILL_PAGE } from '../lib/printpage'
  * be trusted to match the original.
  */
 export default function InvoiceView() {
-  usePrintPage(BILL_PAGE)
+  useBillPage()
   const { id } = useParams()
   const nav = useNavigate()
   const { can } = useSession()
@@ -117,6 +117,14 @@ export default function InvoiceView() {
         <h1>{opening ? 'Opening balance' : `Bill ${inv?.doc_no ?? ''}`}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/invoices')}>All bills</button>
+          {/*
+            Billing a round is one bill after another. Landing on the preview
+            and having to go back to the list for each one turns a rhythm into
+            a chore, so the next bill starts from here.
+          */}
+          {can('ACCOUNTS', 'ADMIN') && (
+            <button onClick={() => nav('/invoices/new')}>New bill</button>
+          )}
           {!opening && (
             <button className="primary" onClick={() => window.print()} disabled={!inv}>
               Print

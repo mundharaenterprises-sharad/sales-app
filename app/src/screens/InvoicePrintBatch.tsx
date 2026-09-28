@@ -4,14 +4,14 @@ import { supabase, friendlyMessage } from '../lib/supabase'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
-import { usePrintPage, useDocumentTitle, BILL_PAGE } from '../lib/printpage'
+import { useBillPage, useDocumentTitle } from '../lib/printpage'
 
 /**
  * Several bills as one print job: one bill per A5 sheet, one trip to the
  * printer. The office bills a rep's round in the morning and prints the lot.
  */
 export default function InvoicePrintBatch() {
-  usePrintPage(BILL_PAGE)
+  useBillPage()
   const [params] = useSearchParams()
   const nav = useNavigate()
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean)
