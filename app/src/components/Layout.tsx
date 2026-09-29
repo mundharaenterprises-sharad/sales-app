@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { to: '/receipts', label: 'Payments', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/purchases', label: 'Purchases', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/stock', label: 'Stock',  roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  { to: '/stock/ledger', label: 'Ledger', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/parties', label: 'Parties', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/products', label: 'Products', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/reports', label: 'Reports', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },

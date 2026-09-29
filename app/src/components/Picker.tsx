@@ -31,6 +31,8 @@ export function Picker<T>({
   onPick,
   onClose,
   emptyText,
+  addLabel,
+  onAdd,
 }: {
   title: string
   placeholder: string
@@ -42,6 +44,16 @@ export function Picker<T>({
   onPick: (item: T) => void
   onClose: () => void
   emptyText?: string
+  /**
+   * An escape hatch for the thing that is not on the list.
+   *
+   * Offered both at the foot and, more importantly, in the empty state —
+   * because the moment somebody discovers the shop is missing is the moment
+   * they have typed its name and found nothing, and that is where the way
+   * forward has to be. It receives what was typed, so the form starts with it.
+   */
+  addLabel?: string
+  onAdd?: (typed: string) => void
 }) {
   const [q, setQ] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -137,6 +149,11 @@ export function Picker<T>({
             <div className="empty">
               <h3>Nothing found</h3>
               <p>{q ? `Nothing matches “${q}”.` : emptyText ?? 'There is nothing to choose from.'}</p>
+              {onAdd && (
+                <button className="primary" onClick={() => onAdd(q.trim())}>
+                  {addLabel ?? 'Add a new one'}
+                </button>
+              )}
             </div>
           ) : (
             filtered.map((it, i) => (
@@ -156,6 +173,12 @@ export function Picker<T>({
             </p>
           )}
         </div>
+
+        {onAdd && filtered.length > 0 && (
+          <div className="sheet-foot">
+            <button onClick={() => onAdd(q.trim())}>{addLabel ?? 'Add a new one'}</button>
+          </div>
+        )}
       </div>
     </div>
   )

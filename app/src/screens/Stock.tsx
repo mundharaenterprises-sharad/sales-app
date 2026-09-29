@@ -3,7 +3,8 @@ import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
 import { fmtAge, fmtQty, fmtMoney } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
-import { useOnline } from '../lib/session'
+import { useOnline, useSession } from '../lib/session'
+import { Link } from 'react-router-dom'
 
 interface StockRow {
   product_id: string
@@ -26,6 +27,17 @@ const CACHE_KEY = 'stock'
 
 export default function Stock() {
   const online = useOnline()
+  const { can } = useSession()
+
+  /**
+   * The row somebody tapped.
+   *
+   * The compact list shows a name and what is left of it, which is what a
+   * phone has room for and what a stock check needs. Everything else — what is
+   * held against orders, the pack maths, both rates — still has to be
+   * reachable, and a row you can tap is where people look for it.
+   */
+  const [detail, setDetail] = useState<StockRow | null>(null)
   const [rows, setRows] = useState<StockRow[] | null>(null)
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [fromCache, setFromCache] = useState(false)
@@ -113,6 +125,13 @@ export default function Stock() {
 
   return (
     <>
+      {detail && (
+        <StockDetail
+          row={detail}
+          canSeeLedger={can('ACCOUNTS', 'ADMIN')}
+          onClose={() => setDetail(null)}
+        />
+      )}
       <div className="page-head">
         <h1>Stock</h1>
         <span className="sub">
@@ -189,7 +208,11 @@ export default function Stock() {
                   const avail = Number(r.available)
                   const reserved = Number(r.reserved)
                   return (
-                    <tr key={r.product_id}>
+                    <tr
+                      key={r.product_id}
+                      className="clickable"
+                      onClick={() => setDetail(r)}
+                    >
                       {/* What a person scans a stock list for is the name and
                           what is left of it, so those two make the first line
                           and the rest folds underneath. */}
@@ -260,5 +283,96 @@ export default function Stock() {
         </>
       )}
     </>
+  )
+}
+
+/**
+ * One product, in full.
+ *
+ * Everything the wide table has, laid out as facts rather than columns,
+ * because on a phone a column heading you cannot see is not a label.
+ */
+function StockDetail({
+  row,
+  canSeeLedger,
+  onClose,
+}: {
+  row: StockRow
+  canSeeLedger: boolean
+  onClose: () => void
+}) {
+  const avail = Number(row.available)
+  const packs = row.pack_uom && Number(row.pack_size) > 1
+    ? Math.floor(avail / Number(row.pack_size))
+    : null
+  const loose = packs === null ? avail : avail % Number(row.pack_size)
+
+  const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="fact">
+      <span className="fact-label">{label}</span>
+      <span className="fact-value">{children}</span>
+    </div>
+  )
+
+  return (
+    <div
+      className="sheet-backdrop"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="sheet sheet-dialog" role="dialog" aria-modal="true" aria-label={row.product_name}>
+        <div className="sheet-head">
+          <h2>{row.product_name}</h2>
+          <button className="ghost" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="sheet-body" style={{ padding: 16 }}>
+          <Fact label="Code">{row.product_code}</Fact>
+          <Fact label="Group">{row.group_name}</Fact>
+
+          <Fact label="Available">
+            <span className={`pill ${avail > 0 ? 'good' : 'bad'}`}>
+              {fmtQty(avail)} {row.base_uom}
+            </span>
+            {packs !== null && (
+              <div className="sub" style={{ marginTop: 4 }}>
+                {fmtQty(packs)} {row.pack_uom} and {fmtQty(loose)} {row.base_uom} loose
+              </div>
+            )}
+          </Fact>
+
+          <Fact label="On hand">{fmtQty(row.on_hand)} {row.base_uom}</Fact>
+          <Fact label="Held for orders">
+            {Number(row.reserved) > 0
+              ? <span className="pill warn">{fmtQty(row.reserved)} {row.base_uom}</span>
+              : <span className="muted">nothing</span>}
+          </Fact>
+
+          {row.pack_uom && Number(row.pack_size) > 1 && (
+            <Fact label="Pack">
+              1 {row.pack_uom} = {fmtQty(row.pack_size)} {row.base_uom}
+            </Fact>
+          )}
+
+          <Fact label="Selling rate">
+            {row.pack_uom && row.pack_sale_rate != null && (
+              <>{fmtMoney(row.pack_sale_rate)} per {row.pack_uom}<br /></>
+            )}
+            {fmtMoney(row.sale_rate)} per {row.base_uom}
+          </Fact>
+
+          <Fact label="Stock at selling price">
+            {fmtMoney(Number(row.on_hand) * Number(row.sale_rate))}
+          </Fact>
+        </div>
+
+        {canSeeLedger && (
+          <div className="sheet-foot">
+            <Link to={`/stock/ledger?product=${row.product_id}`} style={{ marginLeft: 'auto' }}>
+              <button className="primary">See every movement</button>
+            </Link>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

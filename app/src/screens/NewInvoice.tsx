@@ -4,6 +4,8 @@ import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { fmtMoney, fmtQty } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useDialog } from '../components/Dialog'
+import { NewPartySheet } from '../components/NewPartySheet'
+import type { NewParty } from '../components/NewPartySheet'
 import { Picker } from '../components/Picker'
 import { Check, num } from '../components/FormSheet'
 
@@ -157,6 +159,31 @@ export default function NewInvoice() {
    * making harder.
    */
   const [isCash, setIsCash] = useState(false)
+
+  /** Set when the customer being billed is not on the list yet. */
+  const [addingParty, setAddingParty] = useState<string | null>(null)
+
+  /**
+   * A customer created here is billed immediately, so the list the picker
+   * reads has to gain them without a round trip — otherwise the rep adds the
+   * shop, the picker reopens, and the shop they just created is not in it.
+   */
+  const acceptNewParty = useCallback((np: NewParty) => {
+    const row: PartyRow = {
+      party_id: np.party_id,
+      party_code: np.code,
+      party_name: np.name,
+      route_name: '',
+      balance: 0,
+      credit_limit: null,
+      over_credit_limit: false,
+    }
+    setParties((ps) => [...(ps ?? []), row].sort((a, b) =>
+      a.party_name.localeCompare(b.party_name)))
+    setParty(row)
+    setAddingParty(null)
+    setPicking(null)
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Load
@@ -1032,6 +1059,8 @@ export default function NewInvoice() {
           onPick={setParty}
           onClose={() => setPicking(null)}
           emptyText="No customers yet."
+          addLabel="Add a new customer"
+          onAdd={(typed) => { setAddingParty(typed); setPicking(null) }}
           render={(p) => (
             <>
               <div className="strong">{p.party_name}</div>
@@ -1041,6 +1070,19 @@ export default function NewInvoice() {
               </div>
             </>
           )}
+        />
+      )}
+
+      {addingParty !== null && (
+        <NewPartySheet
+          initialName={addingParty}
+          onCreated={acceptNewParty}
+          onPicked={(id) => {
+            const p = (parties ?? []).find((x) => x.party_id === id)
+            if (p) setParty(p)
+            setAddingParty(null)
+          }}
+          onClose={() => setAddingParty(null)}
         />
       )}
 

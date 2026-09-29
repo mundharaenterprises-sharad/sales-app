@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Login from './screens/Login'
 import Home from './screens/Home'
 import Stock from './screens/Stock'
+import StockLedger from './screens/StockLedger'
 import Import from './screens/Import'
 import Orders from './screens/Orders'
 import NewOrder from './screens/NewOrder'
@@ -80,6 +81,10 @@ function Gate() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="stock" element={<Stock />} />
+        <Route
+          path="stock/ledger"
+          element={user?.role === 'REP' ? <Navigate to="/stock" replace /> : <StockLedger />}
+        />
         <Route path="orders" element={<Orders />} />
         <Route path="orders/new" element={<NewOrder />} />
         {/* Same screen. An order is the same thing whether it is being taken

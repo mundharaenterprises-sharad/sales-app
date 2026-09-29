@@ -5,6 +5,8 @@ import { getSnapshot, putSnapshot } from '../lib/cache'
 import { fmtMoney, fmtQty, fmtAge } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useDialog } from '../components/Dialog'
+import { NewPartySheet } from '../components/NewPartySheet'
+import type { NewParty } from '../components/NewPartySheet'
 import { Picker } from '../components/Picker'
 import { useOnline } from '../lib/session'
 import {
@@ -84,6 +86,31 @@ export default function NewOrder() {
   /** Set when a draft this device had kept was put back on the screen. */
   const [restored, setRestored] = useState(false)
   const { dialog, ask } = useDialog()
+
+  /** Set when the shop being sold to is not on the list yet. */
+  const [addingParty, setAddingParty] = useState<string | null>(null)
+
+  /**
+   * A shop created in the field is sold to immediately, so the cached list has
+   * to gain it now — a rep who adds a shop and then cannot find it has been
+   * given a button that does nothing useful.
+   */
+  const acceptNewParty = useCallback((np: NewParty) => {
+    const row: PartyRow = {
+      party_id: np.party_id,
+      party_code: np.code,
+      party_name: np.name,
+      route_name: '',
+      balance: 0,
+      credit_limit: null,
+      over_credit_limit: false,
+    }
+    setParties((ps) => [...(ps ?? []), row].sort((a, b) =>
+      a.party_name.localeCompare(b.party_name)))
+    setParty(row)
+    setAddingParty(null)
+    setPicking(null)
+  }, [])
 
   /**
    * Whatever was left over from last time, claimed on the first render.
@@ -919,6 +946,8 @@ export default function NewOrder() {
           onPick={setParty}
           onClose={() => setPicking(null)}
           emptyText="No customers have been imported yet."
+          addLabel="Add a new customer"
+          onAdd={(typed) => { setAddingParty(typed); setPicking(null) }}
           render={(p) => (
             <>
               <div className="strong">{p.party_name}</div>
@@ -929,6 +958,19 @@ export default function NewOrder() {
               </div>
             </>
           )}
+        />
+      )}
+
+      {addingParty !== null && (
+        <NewPartySheet
+          initialName={addingParty}
+          onCreated={acceptNewParty}
+          onPicked={(id) => {
+            const p = (parties ?? []).find((x) => x.party_id === id)
+            if (p) setParty(p)
+            setAddingParty(null)
+          }}
+          onClose={() => setAddingParty(null)}
         />
       )}
 

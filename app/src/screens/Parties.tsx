@@ -8,6 +8,7 @@ import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check, Field, FormSheet, Row, num, text } from '../components/FormSheet'
 import { CodeNameSheet } from '../components/CodeNameSheet'
 import { useListKeys } from '../lib/listkeys'
+import { NewPartySheet } from '../components/NewPartySheet'
 
 export interface PartyRow {
   id: string
@@ -42,6 +43,13 @@ export default function Parties() {
   const { user } = useSession()
   const online = useOnline()
   const isAdmin = user?.role === 'ADMIN'
+  /**
+   * Everybody may add a customer; only the office may change one. The admin
+   * form does both and asks for a code, an opening balance and a credit limit,
+   * none of which a rep should be deciding — so they get the short form, which
+   * is the same one they get while taking an order.
+   */
+  const [addingParty, setAddingParty] = useState(false)
 
   const [rows, setRows] = useState<PartyRow[] | null>(null)
   const [routes, setRoutes] = useState<RouteRow[]>([])
@@ -123,19 +131,36 @@ export default function Parties() {
 
   return (
     <>
+      {addingParty && (
+        <NewPartySheet
+          onCreated={() => { setAddingParty(false); void load() }}
+          onPicked={() => setAddingParty(false)}
+          onClose={() => setAddingParty(false)}
+        />
+      )}
+
       <div className="page-head">
         <h1>Parties</h1>
         <span className="sub">
           {fetchedAt && fromCache && `Saved on this device ${fmtAge(fetchedAt)}`}
         </span>
-        {isAdmin && (
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button onClick={() => setManagingRoutes(true)} disabled={!online}>Routes</button>
-            <button className="primary" onClick={() => setEditing('new')} disabled={!online}>
-              Add party
-            </button>
-          </span>
-        )}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {isAdmin && (
+            <>
+              <button onClick={() => setManagingRoutes(true)} disabled={!online}>Routes</button>
+              <button onClick={() => setEditing('new')} disabled={!online}>
+                Add with full details
+              </button>
+            </>
+          )}
+          <button
+            className="primary"
+            onClick={() => setAddingParty(true)}
+            disabled={!online}
+          >
+            Add customer
+          </button>
+        </span>
       </div>
 
       <ErrorBanner error={error} />

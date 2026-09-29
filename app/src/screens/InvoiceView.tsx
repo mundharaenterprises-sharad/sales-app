@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { fmtMoney } from '../lib/format'
@@ -7,6 +7,7 @@ import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
 import { useSession } from '../lib/session'
 import { useBillPage, useDocumentTitle } from '../lib/printpage'
+import { shareElementAsImage, canShareFiles } from '../lib/sharebill'
 
 /**
  * One bill, laid out as it prints.
@@ -36,6 +37,36 @@ export default function InvoiceView() {
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [shareNote, setShareNote] = useState<string | null>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Send the bill to the shopkeeper as a picture.
+   *
+   * Drawn from the sheet that prints, so the copy they get is the document,
+   * not a retelling of it.
+   */
+  const share = useCallback(async () => {
+    const node = sheetRef.current?.querySelector<HTMLElement>('.sheet-a5')
+    if (!node || !inv) return
+    setShareNote(null)
+    setSharing(true)
+    try {
+      const outcome = await shareElementAsImage(node, {
+        filename: `${inv.doc_no}.png`,
+        title: inv.doc_no,
+        text: `${inv.doc_no} — ${inv.party.name} — ${fmtMoney(inv.net_total)}`,
+      })
+      if (outcome === 'downloaded') {
+        setShareNote('Saved as a picture — attach it from your downloads.')
+      }
+    } catch (e) {
+      setShareNote(friendlyMessage(e))
+    } finally {
+      setSharing(false)
+    }
+  }, [inv])
 
   // If the browser insists on printing a title, let it be the bill's number.
   useDocumentTitle(inv?.doc_no ?? null)
@@ -124,6 +155,11 @@ export default function InvoiceView() {
           */}
           {can('ACCOUNTS', 'ADMIN') && (
             <button onClick={() => nav('/invoices/new')}>New bill</button>
+          )}
+          {!opening && (
+            <button onClick={() => void share()} disabled={!inv || sharing}>
+              {sharing ? <Spinner /> : canShareFiles() ? 'Send' : 'Save as picture'}
+            </button>
           )}
           {!opening && (
             <button className="primary" onClick={() => window.print()} disabled={!inv}>
@@ -218,7 +254,14 @@ export default function InvoiceView() {
           </div>
         </div>
       ) : (
-        inv && <BillSheet bill={inv} />
+        // The wrapper is what `share` reaches into: the picture is drawn from
+        // the very sheet that prints, so the copy the shopkeeper gets and the
+        // copy in the file are the same document.
+        inv && <div ref={sheetRef}><BillSheet bill={inv} /></div>
+      )}
+
+      {shareNote && (
+        <p className="sub no-print" style={{ marginTop: 12 }}>{shareNote}</p>
       )}
 
       <p className="sub no-print" style={{ marginTop: 12 }}>

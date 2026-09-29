@@ -125,6 +125,10 @@ select * from (values
                                            and p.proname = 'order_line_discounts'
                                            and (select count(*) from
                                                  regexp_matches(p.prosrc, 'where true', 'gi')) >= 3)),
+  ('035', 'add a customer, and a stock ledger',
+                                 to_regprocedure('public.create_party(text,uuid,text,text,text,text)') is not null
+                             and to_regprocedure('public.suggest_master_code(text)') is not null
+                             and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
   ('033', 'orders by master group',
