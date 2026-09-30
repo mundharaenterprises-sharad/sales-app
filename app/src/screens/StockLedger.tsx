@@ -66,6 +66,21 @@ export default function StockLedger() {
 
   const [products, setProducts] = useState<ProductRow[] | null>(null)
   const [productId, setProductId] = useState(params.get('product') ?? '')
+
+  /**
+   * Remember the product in the address, keeping whatever else is there.
+   *
+   * setParams({ product }) would replace the whole query string, which on this
+   * screen means silently throwing away the date range the person had chosen
+   * a moment earlier.
+   */
+  const pickProduct = useCallback((id: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('product', id)
+      return next
+    }, { replace: true })
+  }, [setParams])
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
@@ -199,7 +214,7 @@ export default function StockLedger() {
             items={products}
             keyOf={(p) => p.product_id}
             searchOf={(p) => `${p.product_name} ${p.product_code} ${p.group_name}`}
-            onPick={(p) => { setProductId(p.product_id); setParams({ product: p.product_id }) }}
+            onPick={(p) => { setProductId(p.product_id); pickProduct(p.product_id) }}
             onClose={() => setPicking(false)}
             render={(p) => (
               <>
@@ -253,7 +268,7 @@ export default function StockLedger() {
           items={products}
           keyOf={(p) => p.product_id}
           searchOf={(p) => `${p.product_name} ${p.product_code} ${p.group_name}`}
-          onPick={(p) => { setProductId(p.product_id); setParams({ product: p.product_id }) }}
+          onPick={(p) => { setProductId(p.product_id); pickProduct(p.product_id) }}
           onClose={() => setPicking(false)}
           render={(p) => (
             <>

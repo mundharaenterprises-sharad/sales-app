@@ -1,6 +1,13 @@
 import { useState } from 'react'
+import { useUrlState } from '../lib/urlstate'
 
-/** Today, this week, this month — the three ranges anyone actually asks for. */
+/**
+ * Today, this week, this month — the three ranges anyone actually asks for.
+ *
+ * The chosen dates live in the address rather than in component state, so
+ * opening a bill from a report and pressing Back returns to the same period
+ * instead of to an unfiltered screen. See lib/urlstate.ts for why.
+ */
 export function useDateRange(initial: 'today' | 'week' | 'month' = 'month') {
   const iso = (d: Date) => d.toISOString().slice(0, 10)
   const now = new Date()
@@ -18,9 +25,13 @@ export function useDateRange(initial: 'today' | 'week' | 'month' = 'month') {
     return [iso(new Date(t.getFullYear(), t.getMonth(), 1)), iso(t)]
   }
 
+  // Worked out once, at the first render, and then held still. It is both the
+  // starting range and the value that counts as "nothing chosen" — so it must
+  // not be recomputed, or a screen left open across midnight would start
+  // writing yesterday's default into the address.
   const [[f0, t0]] = useState(() => start(initial))
-  const [from, setFrom] = useState(f0)
-  const [to, setTo] = useState(t0)
+  const [from, setFrom] = useUrlState('from', f0)
+  const [to, setTo] = useUrlState('to', t0)
 
   const presets = {
     today: () => { const [a, b] = start('today'); setFrom(a); setTo(b) },

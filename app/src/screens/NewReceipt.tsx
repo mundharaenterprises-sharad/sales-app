@@ -55,7 +55,12 @@ export default function NewReceipt() {
   const [bills, setBills] = useState<OpenBill[] | null>(null)
   const [draft, setDraft] = useState<Record<string, string>>({})
 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  // Today, unless we were sent here from a payment that was dated otherwise —
+  // which is what the New payment button on a receipt does. Entering a day of
+  // collections after the fact means setting the date once, not every time.
+  const [date, setDate] = useState(
+    params.get('date') || new Date().toISOString().slice(0, 10),
+  )
   const [amount, setAmount] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
   const [collectedBy, setCollectedBy] = useState('')
@@ -222,6 +227,35 @@ export default function NewReceipt() {
     nav(`/receipts/${res.receipt_id}`, { replace: true, state: { justSaved: res.doc_no } })
   }, [party, date, draft, amount, amountTouched, applied, collectedBy, remarks, nav])
 
+  /**
+   * Where the keyboard goes next.
+   *
+   * The bill boxes sit ABOVE the amount field in the page, so tabbing forward
+   * from a bill went into Collected by, then Remarks, then Back, then Save,
+   * and then out of the page into the browser's own toolbar — which is what
+   * "tab takes me to Chrome" was. The order somebody actually works in is:
+   * every bill in turn, then the total, then who collected it.
+   *
+   * Enter is what carries that order. Tab still does whatever the browser
+   * does, but the buttons that are only there for the mouse — Pay in full —
+   * are taken out of its way, so tabbing down the column now lands on one
+   * amount box after another instead of alternating with a button.
+   */
+  const focusEl = (selector: string) => {
+    const el = document.querySelector<HTMLElement>(selector)
+    if (!el) return false
+    el.focus()
+    if (el instanceof HTMLInputElement) el.select()
+    return true
+  }
+
+  const nextFromBill = (invoiceId: string) => {
+    const i = (bills ?? []).findIndex((b) => b.invoice_id === invoiceId)
+    const next = (bills ?? [])[i + 1]
+    if (next && focusEl(`[data-pay-for="${CSS.escape(next.invoice_id)}"]`)) return
+    focusEl('#rc-amount')
+  }
+
   if (parties === null) return <Loading what="Loading customers" />
 
   return (
@@ -313,14 +347,24 @@ export default function NewReceipt() {
                             <input
                               type="text"
                               inputMode="decimal"
+                              data-pay-for={b.invoice_id}
                               aria-label={`Amount against ${b.doc_no}`}
                               value={draft[b.invoice_id] ?? ''}
                               onChange={(e) => setLine(b.invoice_id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  nextFromBill(b.invoice_id)
+                                }
+                              }}
                               style={{ textAlign: 'right' }}
                             />
                             <button
                               type="button"
                               className="ghost"
+                              // For the mouse. Leaving it in the tab order put
+                              // a button between every pair of amount boxes.
+                              tabIndex={-1}
                               style={{ minHeight: 28, padding: '2px 6px', fontSize: 12 }}
                               onClick={() => payWhole(b)}
                             >
@@ -359,6 +403,12 @@ export default function NewReceipt() {
                     setAmountTouched(true)
                     setAmount(e.target.value)
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      focusEl('#rc-by')
+                    }
+                  }}
                 />
               </Field>
 
@@ -386,6 +436,15 @@ export default function NewReceipt() {
                 type="text"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
+                onKeyDown={(e) => {
+                  // The end of the form. Enter puts the keyboard on Save
+                  // rather than submitting outright — a payment is money, and
+                  // the last act should be a deliberate one.
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    focusEl('#rc-save')
+                  }
+                }}
               />
             </Field>
 
@@ -410,6 +469,7 @@ export default function NewReceipt() {
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                 <button onClick={() => nav(-1)} disabled={busy}>Back</button>
                 <button
+                  id="rc-save"
                   className="primary"
                   onClick={() => void save()}
                   disabled={busy || !party || (applied <= 0 && !amountTouched)}

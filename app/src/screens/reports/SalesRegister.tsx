@@ -6,6 +6,7 @@ import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { useMasterGroups, MasterFilter } from '../../lib/masters'
+import { useUrlState } from '../../lib/urlstate'
 import type { Sheet } from '../../lib/xlsx'
 
 interface Row {
@@ -31,6 +32,7 @@ interface Row {
 /** One bill line, for the product-wise sheet in the download. */
 interface LineRow {
   invoice_id: string
+  doc_no: string
   invoice_date: string
   route_name: string
   master_code: string | null
@@ -65,9 +67,13 @@ export default function SalesRegister() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [lines, setLines] = useState<LineRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [route, setRoute] = useState('')
-  const [master, setMaster] = useState('')
-  const [rep, setRep] = useState('')
+  // In the address, so opening a bill and coming back lands on the same
+  // filtered report rather than on an unfiltered one. See lib/urlstate.ts.
+  const [route, setRoute] = useUrlState('route', '')
+  const [master, setMaster] = useUrlState('master', '')
+  const [rep, setRep] = useUrlState('rep', '')
+  const [billFrom, setBillFrom] = useUrlState('billfrom', '')
+  const [billTo, setBillTo] = useUrlState('billto', '')
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {
@@ -117,6 +123,32 @@ export default function SalesRegister() {
   const COUNTER = 'Counter sale'
   const repOf = (r: Row) => r.rep_name ?? COUNTER
 
+  /**
+   * A bill number as a number.
+   *
+   * Bills read INV-000123, and nobody types that: they type 123, or 000123,
+   * or paste the whole thing off a bill in front of them. All three have to
+   * mean the same bill, so only the digits are compared — and comparing them
+   * as numbers rather than as text is what makes 99 to 101 return three bills
+   * instead of none.
+   *
+   * Anything with no digits in it at all is not a bill number and is ignored,
+   * rather than filtering the report down to nothing while somebody is still
+   * typing.
+   */
+  const billNo = (s: string): number | null => {
+    const digits = (s.match(/\d+/g) ?? []).join('')
+    return digits === '' ? null : Number(digits)
+  }
+  const lo = billNo(billFrom)
+  const hi = billNo(billTo)
+  const inRange = (doc_no: string) => {
+    if (lo === null && hi === null) return true
+    const n = billNo(doc_no)
+    if (n === null) return false
+    return (lo === null || n >= lo) && (hi === null || n <= hi)
+  }
+
   const reps = useMemo(
     () => (rows ? Array.from(new Set(rows.map(repOf))).sort() : []),
     [rows],
@@ -129,10 +161,14 @@ export default function SalesRegister() {
             (r) =>
               (!route || r.route_name === route) &&
               (!master || r.master_code === master) &&
-              (!rep || repOf(r) === rep),
+              (!rep || repOf(r) === rep) &&
+              inRange(r.doc_no),
           )
         : null,
-    [rows, route, master, rep],
+    // inRange is a fresh closure every render; what it actually reads is
+    // billFrom and billTo, and both are listed. Spelled out because a missing
+    // dependency here is this project's most repeated bug.
+    [rows, route, master, rep, billFrom, billTo],
   )
 
 
@@ -153,7 +189,8 @@ export default function SalesRegister() {
       (l) =>
         (!route || l.route_name === route) &&
         (!master || l.master_code === master) &&
-        (!rep || (l.rep_name ?? COUNTER) === rep),
+        (!rep || (l.rep_name ?? COUNTER) === rep) &&
+        inRange(l.doc_no),
     )
     if (src.length === 0) return []
 
@@ -196,6 +233,10 @@ export default function SalesRegister() {
       master && masters.find((m) => m.code === master)?.name,
       route && `route ${route}`,
       rep && rep,
+      // Named in the sheet title too. A file covering bills 200 to 260 that
+      // does not say so is a file somebody will later mistake for the month.
+      (lo !== null || hi !== null) &&
+        `bills ${lo ?? 'first'} to ${hi ?? 'last'}`,
     ].filter(Boolean).join(' · ')
 
     /** Whole packs, and what is left over. No pack means it is all loose. */
@@ -287,7 +328,8 @@ export default function SalesRegister() {
         [{ header: 'Salesman', value: (t: ProductTotal) => salesmanOf.get(t) ?? '', width: 20 }],
       ),
     ] as unknown as Sheet<never>[]
-  }, [lines, route, master, rep, masters, from, to])
+    // As above: inRange reads billFrom and billTo, both listed.
+  }, [lines, route, master, rep, masters, from, to, billFrom, billTo])
 
   const cols: ReportColumn<Row>[] = [
     {
@@ -325,7 +367,11 @@ export default function SalesRegister() {
   return (
     <Report<Row>
       title="Sales register"
-      subtitle={`${fmtDate(from)} to ${fmtDate(to)}`}
+      subtitle={
+        lo !== null || hi !== null
+          ? `${fmtDate(from)} to ${fmtDate(to)} · bills ${lo ?? 'first'} to ${hi ?? 'last'}`
+          : `${fmtDate(from)} to ${fmtDate(to)}`
+      }
       extraSheets={productSheet}
       footer={
         lines && lines.length > 0 ? (
@@ -343,6 +389,30 @@ export default function SalesRegister() {
             ))}
           </select>
           <MasterFilter masters={masters} value={master} onChange={setMaster} />
+          <label className="inline-field">
+            <span>Bills</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={billFrom}
+              onChange={(e) => setBillFrom(e.target.value)}
+              placeholder="from"
+              aria-label="From bill number"
+              style={{ width: 90 }}
+            />
+          </label>
+          <label className="inline-field">
+            <span>to</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={billTo}
+              onChange={(e) => setBillTo(e.target.value)}
+              placeholder="to"
+              aria-label="To bill number"
+              style={{ width: 90 }}
+            />
+          </label>
           <select
             value={rep}
             onChange={(e) => setRep(e.target.value)}
@@ -354,13 +424,15 @@ export default function SalesRegister() {
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
-          {(route || master || rep) && (
+          {(route || master || rep || billFrom || billTo) && (
             <button
               className="ghost"
               onClick={() => {
                 setRoute('')
                 setMaster('')
                 setRep('')
+                setBillFrom('')
+                setBillTo('')
               }}
             >
               Clear

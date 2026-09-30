@@ -131,6 +131,13 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  -- 036 is one condition on one view, so its signature is that condition:
+  -- the register's definition mentioning is_opening at all.
+  ('036', 'register excludes opening balances',
+                                 exists (select 1 from pg_views
+                                          where schemaname = 'public'
+                                            and viewname = 'v_sales_register'
+                                            and definition like '%is_opening%')),
   ('033', 'orders by master group',
                                  exists (select 1 from information_schema.columns
                                           where table_schema = 'public'

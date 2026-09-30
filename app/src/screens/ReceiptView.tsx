@@ -213,6 +213,17 @@ export default function ReceiptView() {
         <h1>Payment {receipt?.doc_no}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/receipts')}>All payments</button>
+          {/*
+            A day of collections is one payment after another, so the next one
+            starts here rather than back at the list. The date goes with it:
+            somebody entering yesterday's collections should set the date once,
+            not once per receipt.
+          */}
+          {mayEdit && receipt && (
+            <button onClick={() => nav(`/receipts/new?date=${receipt.receipt_date}`)}>
+              New payment
+            </button>
+          )}
           {mayEdit && live && (
             <button onClick={() => void cancel()} disabled={busy}>
               {busy ? <Spinner /> : 'Cancel payment'}

@@ -6,6 +6,7 @@ import { Report } from '../components/Report'
 import type { ReportColumn } from '../components/Report'
 import { Check } from '../components/FormSheet'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
+import { useUrlState, useUrlFlag } from '../lib/urlstate'
 
 /**
  * One day, one page.
@@ -70,13 +71,15 @@ const LINK_TO: Record<string, (id: string) => string | null> = {
 const today = () => new Date().toISOString().slice(0, 10)
 
 export default function DayBook() {
-  const [date, setDate] = useState(today())
+  // In the address, so opening a document from the day book and coming
+  // back lands on the same day. See lib/urlstate.ts.
+  const [date, setDate] = useUrlState('date', today())
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [master, setMaster] = useState('')
-  const [showOrders, setShowOrders] = useState(true)
-  const [byGroup, setByGroup] = useState(false)
+  const [master, setMaster] = useUrlState('master', '')
+  const [showOrders, setShowOrders] = useUrlFlag('orders', true)
+  const [byGroup, setByGroup] = useUrlFlag('bygroup', false)
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {

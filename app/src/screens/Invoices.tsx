@@ -5,6 +5,7 @@ import { fmtDate, fmtMoney, fmtDayMonth } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
+import { useUrlState, useUrlFlag } from '../lib/urlstate'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { AgePill } from '../components/AgePill'
 
@@ -44,15 +45,21 @@ export default function Invoices() {
   const nav = useNavigate()
   const [rows, setRows] = useState<InvoiceRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [q, setQ] = useState('')
-  const [unpaidOnly, setUnpaidOnly] = useState(false)
-  const [route, setRoute] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // Every filter lives in the address, not in this component. Opening a bill
+  // and pressing Back used to come back to an unfiltered list — which on the
+  // screen where somebody works through a route one bill at a time is the
+  // single most annoying thing the app did. See lib/urlstate.ts.
+  const [q, setQ] = useUrlState('q', '')
+  const [unpaidOnly, setUnpaidOnly] = useUrlFlag('unpaid', false)
+  const [route, setRoute] = useUrlState('route', '')
+  const [from, setFrom] = useUrlState('from', '')
+  const [to, setTo] = useUrlState('to', '')
+  const [showCancelled, setShowCancelled] = useUrlFlag('cancelled', true)
+  const [master, setMaster] = useUrlState('master', '')
+  const [showOpening, setShowOpening] = useUrlFlag('opening', true)
+  // Not a filter: a selection is about what you are doing right now, and
+  // bringing it back after a trip into a bill would be a surprise.
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [showCancelled, setShowCancelled] = useState(true)
-  const [master, setMaster] = useState('')
-  const [showOpening, setShowOpening] = useState(true)
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {

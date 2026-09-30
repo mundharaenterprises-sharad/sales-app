@@ -55,14 +55,57 @@ function save(blob: Blob, filename: string) {
 /**
  * Draw an element to a PNG and hand it to the phone.
  *
- * `node` is the printed bill sheet itself. It is drawn at twice its size
+ * `node` is the printed bill sheet itself. It is drawn at three times its size
  * because a bill is small type on a small sheet, and a screenshot of it at
  * actual size is unreadable on the phone it arrives on.
+ *
+ * Before the drawing, the sheet is given the `bill-image` class, which swaps
+ * the screen's palette for the printed one — black ink, larger type, and
+ * colours written out rather than taken from variables so that a phone in
+ * dark mode does not send a bill in white-on-white. The class comes off again
+ * in a `finally`, because leaving it on would change the page the person is
+ * still looking at.
  */
 export async function shareElementAsImage(
   node: HTMLElement,
   { filename, title, text }: { filename: string; title: string; text: string },
 ): Promise<ShareOutcome> {
+  // Only the drawing is done with the class on. Sharing can sit open for as
+  // long as somebody takes to choose a contact, and the bill behind the share
+  // sheet should look like the app, not like the picture.
+  let blob: Blob
+  node.classList.add('bill-image')
+  try {
+    blob = await draw(node)
+  } finally {
+    node.classList.remove('bill-image')
+  }
+
+  const file = new File([blob], filename, { type: 'image/png' })
+
+  if (canShareFiles()) {
+    try {
+      await navigator.share({ files: [file], title, text })
+      return 'shared'
+    } catch (e) {
+      // The share sheet was dismissed. Not an error, and emphatically not a
+      // reason to download something they did not ask for.
+      if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled'
+      // Anything else — a phone that said it could share and then could not —
+      // still ends with the bill in their hands.
+    }
+  }
+
+  save(blob, filename)
+  return 'downloaded'
+}
+
+async function draw(node: HTMLElement): Promise<Blob> {
+  // The class above changes type sizes, so the sheet is a different height
+  // than it was a moment ago. Measuring before the browser has laid it out
+  // again crops the bottom off the bill — which is exactly what it did.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+
   // The size has to be stated. Left to work it out, the drawing came out
   // shifted and cropped — the sheet is centred with an automatic margin and
   // capped at A5 width, and neither of those survives being lifted out of the
@@ -71,7 +114,9 @@ export async function shareElementAsImage(
   const rect = node.getBoundingClientRect()
 
   const blob = await toBlob(node, {
-    pixelRatio: 2,
+    // Three, not two. A bill is small type, and the reader is a shopkeeper
+    // holding a phone, often outdoors.
+    pixelRatio: 3,
     width: Math.ceil(rect.width),
     height: Math.ceil(rect.height),
     // The sheet has no background of its own on screen; without this the
@@ -92,22 +137,5 @@ export async function shareElementAsImage(
     skipFonts: true,
   })
   if (!blob) throw new Error('The bill could not be turned into a picture.')
-
-  const file = new File([blob], filename, { type: 'image/png' })
-
-  if (canShareFiles()) {
-    try {
-      await navigator.share({ files: [file], title, text })
-      return 'shared'
-    } catch (e) {
-      // The share sheet was dismissed. Not an error, and emphatically not a
-      // reason to download something they did not ask for.
-      if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled'
-      // Anything else — a phone that said it could share and then could not —
-      // still ends with the bill in their hands.
-    }
-  }
-
-  save(blob, filename)
-  return 'downloaded'
+  return blob
 }
