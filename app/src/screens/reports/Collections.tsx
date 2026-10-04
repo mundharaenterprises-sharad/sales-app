@@ -6,6 +6,7 @@ import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { Check } from '../../components/FormSheet'
+import { useUrlState, useUrlFlag } from '../../lib/urlstate'
 
 /**
  * Money collected, and by whom.
@@ -34,8 +35,10 @@ export default function Collections() {
   const { from, to, setFrom, setTo, presets } = useDateRange('month')
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [who, setWho] = useState('')
-  const [byCollector, setByCollector] = useState(false)
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [who, setWho] = useUrlState('who', '')
+  const [byCollector, setByCollector] = useUrlFlag('bycollector', false)
 
   const load = useCallback(async () => {
     setError(null)

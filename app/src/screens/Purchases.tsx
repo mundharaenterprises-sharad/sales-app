@@ -6,6 +6,8 @@ import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { useSession } from '../lib/session'
+import { DateInput } from '../components/DateInput'
+import { useUrlState, useUrlFlag } from '../lib/urlstate'
 
 /**
  * Goods in. The mirror of the Bills screen, and laid out the same way, because
@@ -33,11 +35,13 @@ export default function Purchases() {
   const nav = useNavigate()
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [q, setQ] = useState('')
-  const [master, setMaster] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [showCancelled, setShowCancelled] = useState(true)
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [q, setQ] = useUrlState('q', '')
+  const [master, setMaster] = useUrlState('master', '')
+  const [from, setFrom] = useUrlState('from', '')
+  const [to, setTo] = useUrlState('to', '')
+  const [showCancelled, setShowCancelled] = useUrlFlag('cancelled', true)
   const { masters } = useMasterGroups()
 
   const load = useCallback(async () => {
@@ -128,11 +132,11 @@ export default function Purchases() {
           <div className="toolbar">
             <label className="inline-field">
               <span>From</span>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <DateInput value={from} onChange={setFrom} />
             </label>
             <label className="inline-field">
               <span>To</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DateInput value={to} onChange={setTo} />
             </label>
             <button
               onClick={() => {

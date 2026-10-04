@@ -8,6 +8,7 @@ import { NewPartySheet } from '../components/NewPartySheet'
 import type { NewParty } from '../components/NewPartySheet'
 import { Picker } from '../components/Picker'
 import { Check, num } from '../components/FormSheet'
+import { DateInput } from '../components/DateInput'
 
 /**
  * Raising a bill.
@@ -760,13 +761,7 @@ export default function NewInvoice() {
 
           <div className="field">
             <label htmlFor="inv-date">Bill date</label>
-            <input
-              id="inv-date"
-              type="date"
-              value={invoiceDate}
-              disabled={!!replacing}
-              onChange={(e) => setInvoiceDate(e.target.value)}
-            />
+            <DateInput id="inv-date" disabled={!!replacing} value={invoiceDate} onChange={setInvoiceDate} />
           </div>
         </div>
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
-import { fmtMoney, fmtQty, fmtAge } from '../lib/format'
+import { fmtMoney, fmtQty, fmtAge, fmtPacks } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useDialog } from '../components/Dialog'
 import { NewPartySheet } from '../components/NewPartySheet'
@@ -730,7 +730,8 @@ export default function NewOrder() {
                     <div style={{ flex: 1 }}>
                       <span className="strong">{l.product.product_name}</span>
                       <div className="sub">
-                        {fmtQty(l.product.available)} {l.product.base_uom} available
+                        {fmtPacks(l.product.available, l.product.pack_size,
+                                  l.product.pack_uom, l.product.base_uom)} available
                       </div>
                     </div>
                     <button className="ghost" onClick={() => removeLine(i)} aria-label="Remove">
@@ -996,7 +997,7 @@ export default function NewOrder() {
               </div>
               <div style={{ marginTop: 4 }}>
                 <span className={`pill ${Number(p.available) > 0 ? 'good' : 'bad'}`}>
-                  {fmtQty(p.available)} {p.base_uom} available
+                  {fmtPacks(p.available, p.pack_size, p.pack_uom, p.base_uom)} available
                 </span>
               </div>
             </>

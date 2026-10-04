@@ -6,6 +6,8 @@ import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { Check } from '../../components/FormSheet'
 import { useMasterGroups, MasterFilter } from '../../lib/masters'
+import { useUrlState, useUrlFlag } from '../../lib/urlstate'
+import { AgePill } from '../../components/AgePill'
 
 /**
  * Who owes what, and for how long.
@@ -47,12 +49,23 @@ interface RouteRow {
 }
 
 export default function AgeingReport() {
-  const [byRoute, setByRoute] = useState(false)
-  const [overdueOnly, setOverdueOnly] = useState(false)
-  const [route, setRoute] = useState('')
-  const [master, setMaster] = useState('')
-  const [splitGroups, setSplitGroups] = useState(false)
-  const [q, setQ] = useState('')
+  // In the address, so opening a ledger and pressing Back comes back to the
+  // same view. See lib/urlstate.ts.
+  const [byRoute, setByRoute] = useUrlFlag('byroute', false)
+  const [overdueOnly, setOverdueOnly] = useUrlFlag('overdue', false)
+  const [route, setRoute] = useUrlState('route', '')
+  const [master, setMaster] = useUrlState('master', '')
+  const [splitGroups, setSplitGroups] = useUrlFlag('split', false)
+  const [q, setQ] = useUrlState('q', '')
+  /**
+   * What goes at the top.
+   *
+   * The default is the biggest debt, which is the right answer when somebody
+   * asks who owes the most. It is the wrong answer when somebody is working
+   * the list, because the money most likely to be lost is the oldest money,
+   * not the largest — so that is a choice rather than a rule.
+   */
+  const [sort, setSort] = useUrlState('sort', 'owed')
 
   /**
    * One bucket at a time.
@@ -65,7 +78,8 @@ export default function AgeingReport() {
    * rather than by the total, so the biggest problem in the bucket you are
    * working is at the top.
    */
-  const [bucket, setBucket] = useState<'' | 'b_0_15' | 'b_16_30' | 'b_31_45' | 'b_46_plus'>('')
+  const [bucketRaw, setBucket] = useUrlState('bucket', '')
+  const bucket = bucketRaw as '' | 'b_0_15' | 'b_16_30' | 'b_31_45' | 'b_46_plus'
 
   const BUCKETS = [
     { key: 'b_0_15', label: '0–15 days' },
@@ -139,10 +153,16 @@ export default function AgeingReport() {
       // one whose smaller debt has gone stale, which is backwards when the
       // point of choosing a bucket is to work the stale ones.
       .sort((a, b) =>
-        bucket
-          ? Number(b[bucket] ?? 0) - Number(a[bucket] ?? 0)
-          : Number(b.total_outstanding ?? 0) - Number(a.total_outstanding ?? 0))
-  }, [parties, pmRows, route, overdueOnly, useMaster, master, q, bucket])
+        sort === 'oldest'
+          // Oldest money first, and where two customers are equally stale, the
+          // larger debt above — otherwise a 40-rupee relic sits above a
+          // 40,000-rupee one of the same age.
+          ? Number(b.oldest_days ?? 0) - Number(a.oldest_days ?? 0)
+            || Number(b.total_outstanding ?? 0) - Number(a.total_outstanding ?? 0)
+          : bucket
+            ? Number(b[bucket] ?? 0) - Number(a[bucket] ?? 0)
+            : Number(b.total_outstanding ?? 0) - Number(a.total_outstanding ?? 0))
+  }, [parties, pmRows, route, overdueOnly, useMaster, master, q, bucket, sort])
 
   // With a group chosen, the route summary has to be rebuilt from the finer
   // rows — the stored one covers every group at once.
@@ -199,8 +219,10 @@ export default function AgeingReport() {
       align: 'right',
       cell: (r) => <span className="strong">{fmtMoney(r.total_outstanding)}</span>,
     },
+    // Coloured by the bucket it falls in — the same four colours the single
+    // bill pills use, so a number means the same thing wherever it is read.
     { header: 'Oldest', value: (r) => Number(r.oldest_days), type: 'number', align: 'right',
-      cell: (r) => <>{r.oldest_days} d</> },
+      cell: (r) => <AgePill days={r.oldest_days} /> },
     { header: 'Bills', value: (r) => Number(r.open_invoices), type: 'number', align: 'right' },
   ]
 
@@ -259,6 +281,15 @@ export default function AgeingReport() {
           <Check id="overdue" checked={overdueOnly} onChange={setOverdueOnly}>
             Past 15 days only
           </Check>
+          <select
+            value={sort}
+            aria-label="Order the list"
+            onChange={(e) => setSort(e.target.value)}
+            style={{ width: 'auto', minWidth: 150 }}
+          >
+            <option value="owed">Most owed first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
         </>
       )}
     </>

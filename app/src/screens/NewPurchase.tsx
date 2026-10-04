@@ -5,6 +5,7 @@ import { fmtMoney } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Picker } from '../components/Picker'
 import { num } from '../components/FormSheet'
+import { DateInput } from '../components/DateInput'
 
 /**
  * Recording goods in.
@@ -233,7 +234,7 @@ export default function NewPurchase() {
           </div>
           <label className="inline-field">
             <span>Date</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput value={date} onChange={setDate} />
           </label>
           <label className="inline-field">
             <span>Their bill no.</span>
@@ -247,7 +248,7 @@ export default function NewPurchase() {
           </label>
           <label className="inline-field">
             <span>Their bill date</span>
-            <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+            <DateInput value={billDate} onChange={setBillDate} />
           </label>
         </div>
 

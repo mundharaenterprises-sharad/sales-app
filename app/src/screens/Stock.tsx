@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { getSnapshot, putSnapshot } from '../lib/cache'
-import { fmtAge, fmtQty, fmtMoney } from '../lib/format'
+import { fmtAge, fmtQty, fmtMoney, fmtPacks } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useOnline, useSession } from '../lib/session'
 import { Link } from 'react-router-dom'
+import { useUrlState } from '../lib/urlstate'
 
 interface StockRow {
   product_id: string
@@ -43,8 +44,10 @@ export default function Stock() {
   const [fromCache, setFromCache] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [q, setQ] = useState('')
-  const [group, setGroup] = useState('')
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [q, setQ] = useUrlState('q', '')
+  const [group, setGroup] = useUrlState('group', '')
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -228,7 +231,10 @@ export default function Stock() {
                       </td>
                       <td data-label="Group" className="muted m-meta">{r.group_name}</td>
                       <td data-label="On hand" className="num m-meta">
-                        {fmtQty(r.on_hand)} {r.base_uom}
+                        {/* Cartons here too: two figures in the same row, one
+                            in boxes and one in pieces, is how a stock count
+                            goes wrong. */}
+                        {fmtPacks(r.on_hand, r.pack_size, r.pack_uom, r.base_uom)}
                         <span className="only-narrow"> on hand</span>
                       </td>
                       <td data-label="Reserved" className="num m-meta">
@@ -257,14 +263,20 @@ export default function Stock() {
                       </td>
 
                       <td data-label="Available" className="num m-lead">
+                        {/*
+                          Boxes and loose, because that is how it is counted at
+                          the shelf. The piece total stays underneath on a wide
+                          screen: it is what the arithmetic elsewhere uses, and
+                          somebody checking a figure wants to see both.
+                        */}
                         <span className={`pill ${avail > 0 ? 'good' : 'bad'}`}>
-                          {fmtQty(avail)} {r.base_uom}
+                          {fmtPacks(avail, r.pack_size, r.pack_uom, r.base_uom)}
                         </span>
-                        {r.available_packs !== null && avail > 0 && (
+                        {r.pack_uom && Number(r.pack_size) > 1 && avail > 0 && (
                           <span className="only-wide">
                             <br />
                             <span className="muted" style={{ fontSize: 12 }}>
-                              {fmtQty(r.available_packs)} {r.pack_uom}
+                              {fmtQty(avail)} {r.base_uom}
                             </span>
                           </span>
                         )}
@@ -302,10 +314,11 @@ function StockDetail({
   onClose: () => void
 }) {
   const avail = Number(row.available)
+  // Only used to decide whether the piece total is worth repeating under the
+  // carton figure; fmtPacks does the arithmetic itself.
   const packs = row.pack_uom && Number(row.pack_size) > 1
     ? Math.floor(avail / Number(row.pack_size))
     : null
-  const loose = packs === null ? avail : avail % Number(row.pack_size)
 
   const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="fact">
@@ -331,16 +344,18 @@ function StockDetail({
 
           <Fact label="Available">
             <span className={`pill ${avail > 0 ? 'good' : 'bad'}`}>
-              {fmtQty(avail)} {row.base_uom}
+              {fmtPacks(avail, row.pack_size, row.pack_uom, row.base_uom)}
             </span>
             {packs !== null && (
               <div className="sub" style={{ marginTop: 4 }}>
-                {fmtQty(packs)} {row.pack_uom} and {fmtQty(loose)} {row.base_uom} loose
+                {fmtQty(avail)} {row.base_uom} in all
               </div>
             )}
           </Fact>
 
-          <Fact label="On hand">{fmtQty(row.on_hand)} {row.base_uom}</Fact>
+          <Fact label="On hand">
+            {fmtPacks(row.on_hand, row.pack_size, row.pack_uom, row.base_uom)}
+          </Fact>
           <Fact label="Held for orders">
             {Number(row.reserved) > 0
               ? <span className="pill warn">{fmtQty(row.reserved)} {row.base_uom}</span>

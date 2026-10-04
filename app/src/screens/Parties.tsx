@@ -9,6 +9,7 @@ import { Check, Field, FormSheet, Row, num, text } from '../components/FormSheet
 import { CodeNameSheet } from '../components/CodeNameSheet'
 import { useListKeys } from '../lib/listkeys'
 import { NewPartySheet } from '../components/NewPartySheet'
+import { DateInput } from '../components/DateInput'
 
 export interface PartyRow {
   id: string
@@ -474,8 +475,8 @@ function PartyForm({
                    onChange={(e) => set('opening_balance', e.target.value)} />
           </Field>
           <Field label="As at" htmlFor="p-obd">
-            <input id="p-obd" type="date" value={f.opening_balance_date} disabled={ro}
-                   onChange={(e) => set('opening_balance_date', e.target.value)} />
+            <DateInput id="p-obd" value={f.opening_balance_date} disabled={ro}
+                   onChange={(v) => set('opening_balance_date', v)} />
           </Field>
         </Row>
       )}

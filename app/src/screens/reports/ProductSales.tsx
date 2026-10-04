@@ -5,6 +5,7 @@ import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { useSession } from '../../lib/session'
+import { useUrlState } from '../../lib/urlstate'
 
 /**
  * What sold, in quantity and value.
@@ -47,7 +48,9 @@ export default function ProductSales() {
 
   const [raw, setRaw] = useState<Raw[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [group, setGroup] = useState('')
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [group, setGroup] = useUrlState('group', '')
 
   const load = useCallback(async () => {
     setError(null)

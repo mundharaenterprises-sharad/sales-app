@@ -5,6 +5,7 @@ import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { Check } from '../../components/FormSheet'
 import { useSession } from '../../lib/session'
+import { useUrlState, useUrlFlag } from '../../lib/urlstate'
 
 interface Row {
   product_id: string
@@ -30,8 +31,10 @@ export default function StockReport() {
 
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [group, setGroup] = useState('')
-  const [inStockOnly, setInStockOnly] = useState(false)
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [group, setGroup] = useUrlState('group', '')
+  const [inStockOnly, setInStockOnly] = useUrlFlag('instock', false)
 
   const load = useCallback(async () => {
     setError(null)

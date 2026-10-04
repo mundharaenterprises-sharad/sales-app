@@ -618,6 +618,28 @@ table.bill-lines .small { font-size: 9px; }
 .bill-foot .sign { border-top: 1px solid var(--line-2); padding-top: 4px; min-width: 45mm; text-align: center; }
 
 /* -----------------------------------------------------------------------------
+   The bill on screen, at a desk.
+
+   A5 is a small sheet and the type on it is small on purpose, so that twenty
+   items still fit on one page. That is right on paper and wrong on a 24-inch
+   monitor, where the preview sat in the middle looking like a postage stamp
+   and nobody could read the rates without leaning in.
+
+   `zoom` rather than a bigger font, because every size inside the sheet is in
+   fixed pixels. Scaling the root font would leave the headings and the small
+   print where they were and the preview would stop matching the paper. Zoom
+   scales the whole thing at once, so the line breaks on screen are still the
+   line breaks that will come out of the printer — which is the only reason to
+   preview a bill at all.
+
+   Only on a wide screen. A phone is already narrower than the sheet.
+   ----------------------------------------------------------------------------- */
+
+@media screen and (min-width: 820px) {
+  .sheet-a5 { zoom: 1.35; }
+}
+
+/* -----------------------------------------------------------------------------
    The bill as a picture, for sending to a shopkeeper.
 
    Added while sharing on a screen; added again properly after the first
@@ -643,6 +665,10 @@ table.bill-lines .small { font-size: 9px; }
    ----------------------------------------------------------------------------- */
 
 .sheet-a5.bill-image {
+  /* Undo the screen zoom above. The drawing measures the sheet after this
+     class goes on, so the picture comes out at the paper's own proportions
+     and not at whatever magnification the monitor was showing. */
+  zoom: 1;
   background: #fff;
   color: #000;
   border: none;

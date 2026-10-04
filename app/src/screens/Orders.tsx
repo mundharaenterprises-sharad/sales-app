@@ -7,6 +7,7 @@ import { useSession } from '../lib/session'
 import { fetchOrderLines, pendingAsLine } from '../lib/billing'
 import { useDialog } from '../components/Dialog'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
+import { useUrlState } from '../lib/urlstate'
 
 interface OrderRow {
   order_id: string
@@ -69,9 +70,11 @@ export default function Orders() {
   const [rows, setRows] = useState<OrderRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [q, setQ] = useState('')
-  const [master, setMaster] = useState('')
-  const [rep, setRep] = useState('')
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [q, setQ] = useUrlState('q', '')
+  const [master, setMaster] = useUrlState('master', '')
+  const [rep, setRep] = useUrlState('rep', '')
   const { masters } = useMasterGroups()
 
   const [picked, setPicked] = useState<Set<string>>(new Set())

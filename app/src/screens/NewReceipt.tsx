@@ -7,6 +7,7 @@ import { Picker } from '../components/Picker'
 import { Field, Row, num } from '../components/FormSheet'
 import { useSession } from '../lib/session'
 import { AgePill } from '../components/AgePill'
+import { DateInput } from '../components/DateInput'
 
 /**
  * Taking a payment: one screen.
@@ -276,7 +277,7 @@ export default function NewReceipt() {
           </Field>
 
           <Field label="Date" htmlFor="rc-date">
-            <input id="rc-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput id="rc-date" value={date} onChange={setDate} />
           </Field>
         </Row>
 

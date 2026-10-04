@@ -237,6 +237,11 @@ export async function saveOrder(d: OrderDraft): Promise<void> {
     ? await supabase.rpc('modify_sales_order', {
         p_order_id: d.orderId,
         p_lines: lines,
+        // Sent as the box reads it, empty string included — an empty box means
+        // the remark was deleted, and the function treats '' as "clear it".
+        // Left out, as it was until 037, an order's remark could be written
+        // once and never changed, and the bill printed the one from before.
+        p_remarks: d.remarks.trim(),
         ...disc,
       })
     : await supabase.rpc('create_sales_order', {

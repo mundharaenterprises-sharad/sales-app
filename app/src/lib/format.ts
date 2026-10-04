@@ -77,3 +77,38 @@ export function fmtAge(ts: number): string {
 
   return `${fmtDate(then)} at ${fmtTime(then)}`
 }
+
+/**
+ * A quantity in cartons and pieces: 140 pieces at 40 to the carton reads
+ * "3 CTN 20 PCS".
+ *
+ * Stock is held in base units because that is the only unit everything can be
+ * counted in, and every figure in the app was shown that way. But nobody
+ * standing in front of the shelves counts in pieces — they count boxes, and
+ * then whatever is loose on top. "3,140 PCS" is a number you have to do
+ * arithmetic on before you can go and look at it.
+ *
+ * A product with no carton, or a quantity smaller than one, reads as plain
+ * base units, because "0 CTN 20 PCS" is worse than "20 PCS".
+ */
+export function fmtPacks(
+  qty: number | string | null | undefined,
+  packSize: number | string | null | undefined,
+  packUom: string | null | undefined,
+  baseUom: string,
+): string {
+  const v = Number(qty)
+  if (qty === null || qty === undefined || Number.isNaN(v)) return '—'
+  const size = Number(packSize)
+  if (!packUom || !(size > 1)) return `${fmtQty(v)} ${baseUom}`
+
+  // Negatives can happen on a ledger line. Split the size, keep the sign.
+  const sign = v < 0 ? '-' : ''
+  const abs = Math.abs(v)
+  const packs = Math.floor(abs / size)
+  const loose = abs % size
+
+  if (packs === 0) return `${sign}${fmtQty(loose)} ${baseUom}`
+  if (loose === 0) return `${sign}${fmtQty(packs)} ${packUom}`
+  return `${sign}${fmtQty(packs)} ${packUom} ${fmtQty(loose)} ${baseUom}`
+}

@@ -7,6 +7,7 @@ import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check, Field, FormSheet, Row, num, text } from '../components/FormSheet'
 import { CodeNameSheet } from '../components/CodeNameSheet'
 import { useListKeys } from '../lib/listkeys'
+import { DateInput } from '../components/DateInput'
 
 interface ProductRow {
   id: string
@@ -543,8 +544,8 @@ function ProductForm({
                 </Field>
               </Row>
               <Field label="As at" htmlFor="pr-odate" hint="Goes into stock when Admin clicks Post opening stock on the Import screen.">
-                <input id="pr-odate" type="date" value={f.opening_date} disabled={ro}
-                       onChange={(e) => set('opening_date', e.target.value)} />
+                <DateInput id="pr-odate" value={f.opening_date} disabled={ro}
+                           onChange={(v) => set('opening_date', v)} />
               </Field>
             </>
           )}

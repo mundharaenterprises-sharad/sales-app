@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useUrlState } from '../lib/urlstate'
+import { DateInput } from './DateInput'
 
 /**
  * Today, this week, this month — the three ranges anyone actually asks for.
@@ -60,11 +61,11 @@ export function DateRange({
     <>
       <label className="inline-field">
         <span>From</span>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <DateInput value={from} onChange={setFrom} />
       </label>
       <label className="inline-field">
         <span>To</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <DateInput value={to} onChange={setTo} />
       </label>
       <button onClick={presets.today}>Today</button>
       <button onClick={presets.week}>This week</button>

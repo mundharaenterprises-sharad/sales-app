@@ -7,6 +7,7 @@ import type { ReportColumn } from '../components/Report'
 import { Check } from '../components/FormSheet'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { useUrlState, useUrlFlag } from '../lib/urlstate'
+import { DateInput } from '../components/DateInput'
 
 /**
  * One day, one page.
@@ -244,7 +245,7 @@ export default function DayBook() {
       <button onClick={() => shift(-1)} aria-label="Previous day">‹</button>
       <label className="inline-field">
         <span>Date</span>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <DateInput value={date} onChange={setDate} />
       </label>
       <button onClick={() => shift(1)} aria-label="Next day">›</button>
       <button onClick={() => setDate(today())} disabled={date === today()}>

@@ -8,6 +8,7 @@ import { useSession } from '../lib/session'
 import { useUrlState, useUrlFlag } from '../lib/urlstate'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
 import { AgePill } from '../components/AgePill'
+import { DateInput } from '../components/DateInput'
 
 interface InvoiceRow {
   is_cash: boolean
@@ -199,11 +200,11 @@ export default function Invoices() {
           <div className="toolbar">
             <label className="inline-field">
               <span>From</span>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <DateInput value={from} onChange={setFrom} />
             </label>
             <label className="inline-field">
               <span>To</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DateInput value={to} onChange={setTo} />
             </label>
             <button
               onClick={() => {

@@ -5,6 +5,8 @@ import { fmtDate, fmtMoney } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
+import { DateInput } from '../components/DateInput'
+import { useUrlState, useUrlFlag } from '../lib/urlstate'
 
 /**
  * Money received.
@@ -35,10 +37,12 @@ export default function Receipts() {
 
   const [rows, setRows] = useState<ReceiptRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [q, setQ] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [unappliedOnly, setUnappliedOnly] = useState(false)
+  // Filters in the address, so opening a record and pressing Back returns
+  // to the same list. See lib/urlstate.ts.
+  const [q, setQ] = useUrlState('q', '')
+  const [from, setFrom] = useUrlState('from', '')
+  const [to, setTo] = useUrlState('to', '')
+  const [unappliedOnly, setUnappliedOnly] = useUrlFlag('unapplied', false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -166,11 +170,11 @@ export default function Receipts() {
           <div className="toolbar">
             <label className="inline-field">
               <span>From</span>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <DateInput value={from} onChange={setFrom} />
             </label>
             <label className="inline-field">
               <span>To</span>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DateInput value={to} onChange={setTo} />
             </label>
             <button onClick={() => { setFrom(today()); setTo(today()) }}>Today</button>
             {(from || to || q || unappliedOnly) && (
