@@ -17,6 +17,9 @@ const NAV: NavItem[] = [
   { to: '/orders', label: 'Orders', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/invoices', label: 'Bills', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/receipts', label: 'Payments', roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
+  // Office only: posting a return moves stock and credits a customer, which
+  // is the same reason reps do not record payments.
+  { to: '/returns', label: 'Returns', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/purchases', label: 'Purchases', roles: ['ACCOUNTS', 'ADMIN'] },
   { to: '/stock', label: 'Stock',  roles: ['REP', 'ACCOUNTS', 'ADMIN'] },
   { to: '/stock/ledger', label: 'Ledger', roles: ['ACCOUNTS', 'ADMIN'] },

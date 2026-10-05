@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtMoney } from '../lib/format'
+import { fmtMoney, fmtQty } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
@@ -27,6 +27,11 @@ export default function InvoiceView() {
     | null
   const justCreated = navState?.justCreated
   const replaced = navState?.replaced
+  // What has come back against this bill. Worth saying out loud: a bill whose
+  // balance has dropped with no payment against it otherwise reads as an error.
+  const [returned, setReturned] = useState<{
+    returns: number; return_nos: string; qty_base: number; value: number
+  } | null>(null)
 
   const [inv, setInv] = useState<Bill | null>(null)
   const [link, setLink] = useState<{
@@ -73,7 +78,7 @@ export default function InvoiceView() {
 
   const load = useCallback(async () => {
     setError(null)
-    const [i, l] = await Promise.all([
+    const [i, l, ret] = await Promise.all([
       supabase.from('sales_invoice').select(BILL_SELECT).eq('id', id).single(),
       supabase
         .from('v_invoice_list')
@@ -82,6 +87,11 @@ export default function InvoiceView() {
         )
         .eq('invoice_id', id)
         .single(),
+      supabase
+        .from('v_invoice_returns')
+        .select('returns, return_nos, qty_base, value')
+        .eq('invoice_id', id)
+        .maybeSingle(),
     ])
 
     if (i.error) {
@@ -98,6 +108,7 @@ export default function InvoiceView() {
     }
     setInv(row)
     if (!l.error) setLink(l.data as typeof link)
+    setReturned(ret.error ? null : (ret.data as typeof returned))
   }, [id])
 
   useEffect(() => {
@@ -233,6 +244,15 @@ export default function InvoiceView() {
           <Banner tone="warn">
             Part of this bill has been cancelled. {fmtMoney(inv.cancelled_value)} of{' '}
             {fmtMoney(inv.net_total)} was taken off.
+          </Banner>
+        )}
+        {returned && Number(returned.value) > 0 && (
+          <Banner tone="warn">
+            {fmtQty(returned.qty_base)} came back against this bill on{' '}
+            {returned.returns === 1 ? 'return' : 'returns'}{' '}
+            <strong>{returned.return_nos}</strong>, crediting{' '}
+            {fmtMoney(returned.value)}. The bill itself is unchanged — the
+            credit is against what the customer owes.
           </Banner>
         )}
       </div>

@@ -17,6 +17,9 @@ import InvoicePrintBatch from './screens/InvoicePrintBatch'
 import Receipts from './screens/Receipts'
 import NewReceipt from './screens/NewReceipt'
 import ReceiptView from './screens/ReceiptView'
+import Returns from './screens/Returns'
+import NewReturn from './screens/NewReturn'
+import ReturnView from './screens/ReturnView'
 import PartyLedger from './screens/PartyLedger'
 import Purchases from './screens/Purchases'
 import NewPurchase from './screens/NewPurchase'
@@ -105,6 +108,12 @@ function Gate() {
           element={user?.role === 'REP' ? <Navigate to="/receipts" replace /> : <NewReceipt />}
         />
         <Route path="receipts/:id" element={<ReceiptView />} />
+        <Route path="returns" element={<Returns />} />
+        <Route
+          path="returns/new"
+          element={user?.role === 'REP' ? <Navigate to="/returns" replace /> : <NewReturn />}
+        />
+        <Route path="returns/:id" element={<ReturnView />} />
         <Route
           path="day-book"
           element={user?.role === 'REP' ? <Navigate to="/" replace /> : <DayBook />}

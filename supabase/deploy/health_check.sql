@@ -133,6 +133,9 @@ select * from (values
                                  to_regclass('public.v_sales_register_lines') is not null),
   -- 036 is one condition on one view, so its signature is that condition:
   -- the register's definition mentioning is_opening at all.
+  ('038', 'returns you can read back',
+                                 to_regclass('public.v_return_list') is not null
+                             and to_regclass('public.v_invoice_returns') is not null),
   ('037', 'an order''s remark can be edited',
                                  to_regprocedure('public.modify_sales_order(uuid,jsonb,numeric,numeric,text)') is not null
                              and to_regprocedure('public.modify_sales_order(uuid,jsonb,numeric,numeric)') is null),
