@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtMoney, fmtQty } from '../lib/format'
+import { fmtMoney, fmtQty, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { BillSheet, BILL_SELECT } from '../components/BillSheet'
 import type { Bill } from '../components/BillSheet'
@@ -143,7 +143,7 @@ export default function InvoiceView() {
   // no payment has been put against it. The database has the final say; this
   // just decides whether to offer the button.
   const invParty = (inv as unknown as { party_id?: string } | null)?.party_id ?? ''
-  const today = new Date().toISOString().slice(0, 10)
+  const today = isoDate()
   const canCorrect =
     inv != null && inv.status === 'ACTIVE' && inv.invoice_date === today
 

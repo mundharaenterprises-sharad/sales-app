@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney } from '../lib/format'
+import { fmtDate, fmtMoney, isoDate, shiftDays } from '../lib/format'
 import { Report } from '../components/Report'
 import type { ReportColumn } from '../components/Report'
 import { Check } from '../components/FormSheet'
@@ -69,7 +69,7 @@ const LINK_TO: Record<string, (id: string) => string | null> = {
   CANCELLATION: () => null,
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => isoDate()
 
 export default function DayBook() {
   // In the address, so opening a document from the day book and coming
@@ -234,11 +234,10 @@ export default function DayBook() {
     },
   ]
 
-  const shift = (days: number) => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() + days)
-    setDate(d.toISOString().slice(0, 10))
-  }
+  // One day at a time. Both halves of this used to go through UTC, and the
+  // two errors did not cancel: back landed two days earlier, forward stayed
+  // put. See shiftDays in lib/format.ts.
+  const shift = (days: number) => setDate(shiftDays(date, days))
 
   const filters = (
     <>

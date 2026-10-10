@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney, fmtDayMonth } from '../lib/format'
+import { fmtDate, fmtMoney, fmtDayMonth, isoDate } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
@@ -131,7 +131,7 @@ export default function Invoices() {
     if (ids.length > 0) nav(`/invoices/print?ids=${ids.join(',')}`)
   }
 
-  const today = () => new Date().toISOString().slice(0, 10)
+  const today = () => isoDate()
 
   const totals = useMemo(
     () => ({

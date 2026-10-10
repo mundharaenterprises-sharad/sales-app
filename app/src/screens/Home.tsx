@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useSession } from '../lib/session'
-import { fmtQty, fmtMoney } from '../lib/format'
+import { fmtQty, fmtMoney, isoDate } from '../lib/format'
 import { Loading } from '../components/ui'
 import { onUpdateWaiting, applyUpdate, checkForUpdate, buildLabel } from '../lib/updates'
 
@@ -35,7 +35,7 @@ export default function Home() {
     let alive = true
 
     async function load() {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = isoDate()
       const monthStart = today.slice(0, 8) + '01'
 
       const [products, parties, low, open, sales] = await Promise.all([

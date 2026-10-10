@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
-import { fmtMoney, fmtQty } from '../lib/format'
+import { fmtMoney, fmtQty, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useDialog } from '../components/Dialog'
 import { NewPartySheet } from '../components/NewPartySheet'
@@ -105,7 +105,7 @@ interface Shortfall {
   on_hand: number
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => isoDate()
 
 /** Quantity in base units, for comparing against stock and order pending. */
 function baseQty(l: Line): number {

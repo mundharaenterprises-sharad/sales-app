@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
+import { fmtDate, fmtMoney, fmtQty, isoDate } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useSession } from '../lib/session'
 import { fetchOrderLines, pendingAsLine } from '../lib/billing'
@@ -235,7 +235,7 @@ export default function Orders() {
     setBilling({ done: 0, total: orders.length })
 
     const out: BillResult[] = []
-    const date = new Date().toISOString().slice(0, 10)
+    const date = isoDate()
 
     for (const o of orders) {
       try {

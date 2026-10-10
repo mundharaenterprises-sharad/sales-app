@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
+import { fmtDate, fmtMoney, fmtQty, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Field, Row, Check, num } from '../components/FormSheet'
 import { DateInput } from '../components/DateInput'
@@ -96,7 +96,7 @@ export default function NewReturn() {
   const [loadingLines, setLoadingLines] = useState(false)
 
   const [date, setDate] = useState(
-    params.get('date') || new Date().toISOString().slice(0, 10),
+    params.get('date') || isoDate(),
   )
   const [reason, setReason] = useState('')
   const [remarks, setRemarks] = useState('')

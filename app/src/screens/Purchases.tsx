@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney } from '../lib/format'
+import { fmtDate, fmtMoney, isoDate } from '../lib/format'
 import { Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useMasterGroups, MasterFilter } from '../lib/masters'
@@ -83,7 +83,7 @@ export default function Purchases() {
     .filter((r) => r.status !== 'CANCELLED')
     .reduce((s, r) => s + Number(r.net_total), 0)
 
-  const today = () => new Date().toISOString().slice(0, 10)
+  const today = () => isoDate()
 
   if (rows === null) return <Loading what="Loading purchases" />
 

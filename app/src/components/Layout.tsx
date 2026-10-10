@@ -4,6 +4,7 @@ import { useSession, useOnline } from '../lib/session'
 import { Banner } from './ui'
 import OrderSaveBanner from './OrderSaveBanner'
 import type { Role } from '../lib/supabase'
+import { useScrollRestore } from '../lib/scrollrestore'
 
 interface NavItem {
   to: string
@@ -33,6 +34,10 @@ const NAV: NavItem[] = [
 const SCROLL_KEYS = ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End']
 
 export default function Layout() {
+  // Back should land where you were in the list, not at the top of it.
+  // See lib/scrollrestore.ts.
+  useScrollRestore()
+
   const { user, signOut } = useSession()
   const online = useOnline()
   const location = useLocation()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
-import { fmtMoney } from '../lib/format'
+import { fmtMoney, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Picker } from '../components/Picker'
 import { num } from '../components/FormSheet'
@@ -51,7 +51,7 @@ interface Line {
   rate: string
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => isoDate()
 
 export default function NewPurchase() {
   const nav = useNavigate()

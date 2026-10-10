@@ -1,4 +1,5 @@
 import { supabase, asDbError, friendlyMessage } from './supabase'
+import { isoDate } from './format'
 
 /**
  * An order is saved by leaving the screen.
@@ -246,7 +247,7 @@ export async function saveOrder(d: OrderDraft): Promise<void> {
       })
     : await supabase.rpc('create_sales_order', {
         p_party_id: d.party!.party_id,
-        p_order_date: new Date().toISOString().slice(0, 10),
+        p_order_date: isoDate(),
         p_lines: lines,
         p_remarks: d.remarks.trim() || null,
         ...disc,

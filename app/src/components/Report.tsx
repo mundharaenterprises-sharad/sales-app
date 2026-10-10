@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { fmtMoney, fmtQty } from '../lib/format'
+import { fmtMoney, fmtQty, isoDate } from '../lib/format'
 import { downloadXlsx } from '../lib/xlsx'
 import type { CellType } from '../lib/xlsx'
 import { Empty, ErrorBanner, Loading } from './ui'
@@ -78,7 +78,7 @@ export function Report<T>({
   useReportPage()
   // A report's printed header is expected, so make it say what the report is.
   useDocumentTitle(title)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = isoDate()
 
   /**
    * Which of the two phone lines each column lands on.

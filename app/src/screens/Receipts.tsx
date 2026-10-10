@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney } from '../lib/format'
+import { fmtDate, fmtMoney, isoDate } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading } from '../components/ui'
 import { Check } from '../components/FormSheet'
 import { useSession } from '../lib/session'
@@ -116,7 +116,7 @@ export default function Receipts() {
     [filtered],
   )
 
-  const today = () => new Date().toISOString().slice(0, 10)
+  const today = () => isoDate()
 
   if (rows === null) return <Loading what="Loading payments" />
 

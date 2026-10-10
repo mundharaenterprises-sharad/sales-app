@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useUrlState } from '../lib/urlstate'
 import { DateInput } from './DateInput'
+import { isoDate } from '../lib/format'
 
 /**
  * Today, this week, this month — the three ranges anyone actually asks for.
@@ -10,20 +11,19 @@ import { DateInput } from './DateInput'
  * instead of to an unfiltered screen. See lib/urlstate.ts for why.
  */
 export function useDateRange(initial: 'today' | 'week' | 'month' = 'month') {
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
   const now = new Date()
 
   const start = (which: 'today' | 'week' | 'month'): [string, string] => {
     const t = new Date()
-    if (which === 'today') return [iso(t), iso(t)]
+    if (which === 'today') return [isoDate(t), isoDate(t)]
     if (which === 'week') {
       const d = new Date(t)
       // Weeks start on Monday here, which is how a rep's round is counted.
       const back = (d.getDay() + 6) % 7
       d.setDate(d.getDate() - back)
-      return [iso(d), iso(t)]
+      return [isoDate(d), isoDate(t)]
     }
-    return [iso(new Date(t.getFullYear(), t.getMonth(), 1)), iso(t)]
+    return [isoDate(new Date(t.getFullYear(), t.getMonth(), 1)), isoDate(t)]
   }
 
   // Worked out once, at the first render, and then held still. It is both the
@@ -38,7 +38,7 @@ export function useDateRange(initial: 'today' | 'week' | 'month' = 'month') {
     today: () => { const [a, b] = start('today'); setFrom(a); setTo(b) },
     week: () => { const [a, b] = start('week'); setFrom(a); setTo(b) },
     month: () => { const [a, b] = start('month'); setFrom(a); setTo(b) },
-    all: () => { setFrom(''); setTo(iso(now)) },
+    all: () => { setFrom(''); setTo(isoDate(now)) },
   }
 
   return { from, to, setFrom, setTo, presets }

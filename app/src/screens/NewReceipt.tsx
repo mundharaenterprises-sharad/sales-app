@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney } from '../lib/format'
+import { fmtDate, fmtMoney, isoDate } from '../lib/format'
 import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Picker } from '../components/Picker'
 import { Field, Row, num } from '../components/FormSheet'
@@ -60,7 +60,7 @@ export default function NewReceipt() {
   // which is what the New payment button on a receipt does. Entering a day of
   // collections after the fact means setting the date once, not every time.
   const [date, setDate] = useState(
-    params.get('date') || new Date().toISOString().slice(0, 10),
+    params.get('date') || isoDate(),
   )
   const [amount, setAmount] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
