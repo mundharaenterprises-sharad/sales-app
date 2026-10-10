@@ -1002,3 +1002,15 @@ kbd + kbd { margin-left: 3px; }
 .fact-label { flex: 0 0 42%; color: var(--ink-3); font-size: 13.5px; }
 .fact-value { flex: 1; text-align: right; font-weight: 600; }
 .fact-value .sub { font-weight: 400; }
+
+/* One step back, on every screen. See components/BackBar.tsx. */
+.backbar { margin: -4px 0 10px; }
+.backbar button {
+  min-height: 34px;
+  padding: 4px 12px 4px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.backbar button:hover { color: var(--ink); background: var(--surface-2); }
+@media print { .backbar { display: none; } }

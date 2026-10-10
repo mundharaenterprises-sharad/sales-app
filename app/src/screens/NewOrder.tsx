@@ -470,7 +470,9 @@ export default function NewOrder() {
       if (!Number.isFinite(Number(l.rate))) out.push(`Line ${i + 1}: rate is not a number`)
       if (qtyBase(l) > Number(l.product.available))
         out.push(
-          `${l.product.product_name}: only ${fmtQty(l.product.available)} ${l.product.base_uom} available`,
+          `${l.product.product_name}: only ` +
+            `${fmtPacks(l.product.available, l.product.pack_size, l.product.pack_uom,
+                        l.product.base_uom)} available`,
         )
     })
     return out

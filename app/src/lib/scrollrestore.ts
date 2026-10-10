@@ -34,8 +34,20 @@ import { useLocation, useNavigationType } from 'react-router-dom'
 
 const positions = new Map<string, number>()
 
-/** How long to keep trying before deciding the rows are not coming. */
-const GIVE_UP_AFTER_MS = 2000
+/**
+ * How long to keep trying before deciding the rows are never coming.
+ *
+ * Generous on purpose. The first version gave up after two seconds, which is
+ * fine on a desk and not fine on the thing this is for — a rep's phone on a
+ * slow connection, where the list can take longer than that to arrive. When
+ * it gave up the page was still one screen high, so "scroll as far as you
+ * can" meant scrolling to the top: exactly the behaviour being fixed, and
+ * only on the occasions it mattered most.
+ */
+const GIVE_UP_AFTER_MS = 15000
+
+/** …and how long the page must stop growing before we believe it is done. */
+const SETTLED_FOR_MS = 1500
 
 export function useScrollRestore() {
   const { key } = useLocation()
@@ -53,7 +65,20 @@ export function useScrollRestore() {
   // therefore always zero, and it overwrites the real position with it.
   useEffect(() => {
     current.current = key
-    const onScroll = () => { positions.set(current.current, window.scrollY) }
+    const onScroll = () => {
+      const y = window.scrollY
+      const room = document.documentElement.scrollHeight - window.innerHeight
+      const had = positions.get(current.current) ?? 0
+      // A scroll to the top on a page that has just become too short to hold
+      // where we were is not somebody scrolling up. It is the old screen being
+      // torn down: the rows go, the page collapses to one screen, and the
+      // browser pins the scroll to zero. That event arrives while this
+      // listener is still attached, and taking it at face value overwrites the
+      // position with zero a moment before it is needed — which is exactly how
+      // this went wrong the first time, from the other direction.
+      if (y < had && room < had) return
+      positions.set(current.current, y)
+    }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [key])
@@ -72,6 +97,8 @@ export function useScrollRestore() {
 
     let cancelled = false
     const started = performance.now()
+    let tallest = 0
+    let grewAt = started
 
     // Anything the person does themselves ends it.
     const abandon = () => { cancelled = true }
@@ -86,14 +113,39 @@ export function useScrollRestore() {
         window.scrollTo(0, want)
         return
       }
-      // Not tall enough yet — the rows are still on their way.
-      if (performance.now() - started < GIVE_UP_AFTER_MS) {
-        requestAnimationFrame(tryIt)
-      } else {
-        // As close as the page can get. Better than the top: a list that came
-        // back shorter than it was still puts you near the end you were at.
-        window.scrollTo(0, Math.max(0, room))
+
+      const now = performance.now()
+      if (room > tallest) {
+        tallest = room
+        grewAt = now
       }
+
+      // Two ways to stop: the page has stopped growing for long enough that
+      // the rows are evidently all in, or we have waited far too long. Height
+      // rather than a plain timer, because a page that is still filling is a
+      // page worth waiting for however long it has taken.
+      // `tallest > 0` matters: a page that has not grown AT ALL has not
+      // settled, it has not started. Without that, a list still being fetched
+      // looks exactly like a list that came back empty, and the wait ends a
+      // second and a half after Back — which on a slow connection is every
+      // time.
+      const settled = tallest > 0 && now - grewAt > SETTLED_FOR_MS
+      const waitedTooLong = now - started > GIVE_UP_AFTER_MS
+
+      if (!settled && !waitedTooLong) {
+        // A frame at a time while the page is actively filling, then slower.
+        // Restoring a scroll position does not need sixty checks a second for
+        // fifteen seconds on a phone.
+        if (now - started < 1000) requestAnimationFrame(tryIt)
+        else window.setTimeout(tryIt, 100)
+        return
+      }
+
+      // The list came back shorter than it was — fewer rows, or a filter.
+      // Go as far as it now goes, which still lands near the end somebody was
+      // reading. If it did not grow at all, leave the page alone rather than
+      // scrolling it to the top for no reason.
+      if (room > 0) window.scrollTo(0, Math.min(want, room))
     }
     requestAnimationFrame(tryIt)
 

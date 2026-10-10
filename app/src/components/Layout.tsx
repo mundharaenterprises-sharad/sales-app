@@ -5,6 +5,7 @@ import { Banner } from './ui'
 import OrderSaveBanner from './OrderSaveBanner'
 import type { Role } from '../lib/supabase'
 import { useScrollRestore } from '../lib/scrollrestore'
+import { BackBar } from './BackBar'
 
 interface NavItem {
   to: string
@@ -131,6 +132,7 @@ export default function Layout() {
       </nav>
 
       <main>
+        <BackBar />
         <OrderSaveBanner />
         {!online && (
           <Banner tone="warn">

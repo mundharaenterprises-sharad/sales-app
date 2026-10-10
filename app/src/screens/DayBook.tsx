@@ -50,6 +50,23 @@ interface Summary {
   entry_count: number
 }
 
+/**
+ * What can be shown or hidden.
+ *
+ * A module constant, so the same hooks are called in the same order every
+ * render. Everything is on to begin with — the day book's job is to be the
+ * whole day — and the filter is for reading one kind at a time when you are
+ * chasing something specific.
+ */
+const TYPES = [
+  { key: 'BILL',         param: 'bills',      label: 'Bills' },
+  { key: 'PAYMENT',      param: 'payments',   label: 'Payments' },
+  { key: 'ORDER',        param: 'orders',     label: 'Orders' },
+  { key: 'PURCHASE',     param: 'purchases',  label: 'Purchases' },
+  { key: 'RETURN',       param: 'returns',    label: 'Returns' },
+  { key: 'CANCELLATION', param: 'cancels',    label: 'Cancellations' },
+] as const
+
 const LABEL: Record<string, string> = {
   BILL: 'Bill',
   PAYMENT: 'Payment',
@@ -59,13 +76,13 @@ const LABEL: Record<string, string> = {
   CANCELLATION: 'Cancellation',
 }
 
-/** Where clicking a row goes. Returns and cancellations have no screen of their own. */
+/** Where clicking a row goes. A cancellation has no screen of its own. */
 const LINK_TO: Record<string, (id: string) => string | null> = {
   BILL: (id) => `/invoices/${id}`,
   PAYMENT: (id) => `/receipts/${id}`,
   PURCHASE: (id) => `/purchases/${id}`,
   ORDER: () => null,
-  RETURN: () => null,
+  RETURN: (id) => `/returns/${id}`,
   CANCELLATION: () => null,
 }
 
@@ -79,7 +96,14 @@ export default function DayBook() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [master, setMaster] = useUrlState('master', '')
-  const [showOrders, setShowOrders] = useUrlFlag('orders', true)
+  // One switch per kind of document, each remembered in the address.
+  const show = TYPES.map((t) => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- TYPES is a module
+    // constant, so this is a fixed number of hooks in a fixed order.
+    const [on, setOn] = useUrlFlag(t.param, true)
+    return { ...t, on, setOn }
+  })
+  const hidden = new Set<string>(show.filter((t) => !t.on).map((t) => t.key))
   const [byGroup, setByGroup] = useUrlFlag('bygroup', false)
   const { masters } = useMasterGroups()
 
@@ -114,10 +138,12 @@ export default function DayBook() {
       // bill, so filtering by group must not silently hide the day's cash —
       // "Received 0.00" would read as a bug rather than as an answer.
       if (master && r.master_code !== null && r.master_code !== master) return false
-      if (!showOrders && r.doc_type === 'ORDER') return false
+      if (hidden.has(r.doc_type)) return false
       return true
     })
-  }, [entries, master, showOrders])
+    // The set is rebuilt each render from the switches; listing its contents
+    // rather than the set itself is what makes this recompute when one moves.
+  }, [entries, master, show.map((t) => t.on).join()])
 
   /**
    * Chronological by default, because the day book's job is "what happened
@@ -251,9 +277,16 @@ export default function DayBook() {
         Today
       </button>
       <MasterFilter masters={masters} value={master} onChange={setMaster} />
-      <Check id="db-orders" checked={showOrders} onChange={setShowOrders}>
-        Include orders
-      </Check>
+      {show.map((t) => (
+        <Check key={t.param} id={`db-${t.param}`} checked={t.on} onChange={t.setOn}>
+          {t.label}
+        </Check>
+      ))}
+      {hidden.size > 0 && (
+        <button className="ghost" onClick={() => show.forEach((t) => t.setOn(true))}>
+          Show everything
+        </button>
+      )}
       <Check id="db-group" checked={byGroup} onChange={setByGroup}>
         Group together
       </Check>

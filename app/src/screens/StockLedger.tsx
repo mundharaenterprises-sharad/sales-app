@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
 import { fmtDate, fmtQty } from '../lib/format'
 import { Report } from '../components/Report'
@@ -48,6 +48,24 @@ interface ProductRow {
   group_name: string
   base_uom: string
   on_hand: number
+}
+
+/**
+ * Where a movement came from.
+ *
+ * A ledger line that cannot be opened is a dead end: you can see that eighty
+ * pieces went out on the 12th and have no way to find out to whom without
+ * going to the Bills screen and hunting by date.
+ *
+ * Only the three that have a screen of their own are links. A cancellation's
+ * doc_id points at the cancellation record rather than the bill it undid, and
+ * an opening or an adjustment has nowhere to go — those stay plain text
+ * rather than becoming links that lead nowhere.
+ */
+const LINK_TO: Record<string, (id: string) => string> = {
+  SALE: (id) => `/invoices/${id}`,
+  PURCHASE: (id) => `/purchases/${id}`,
+  SALE_RETURN: (id) => `/returns/${id}`,
 }
 
 const LABEL: Record<string, string> = {
@@ -163,7 +181,17 @@ export default function StockLedger() {
       width: 14,
       mobile: 'title',
     },
-    { header: 'What', value: (r) => LABEL[r.doc_type] ?? r.doc_type, width: 16, mobile: 'meta' },
+    {
+      header: 'What',
+      value: (r) => LABEL[r.doc_type] ?? r.doc_type,
+      width: 16,
+      mobile: 'meta',
+      cell: (r) => {
+        const label = LABEL[r.doc_type] ?? r.doc_type
+        const to = r.doc_id ? LINK_TO[r.doc_type]?.(r.doc_id) : undefined
+        return to ? <Link to={to}>{label}</Link> : <>{label}</>
+      },
+    },
     { header: 'In', value: (r) => (Number(r.qty_in) > 0 ? Number(r.qty_in) : null),
       type: 'qty', align: 'right', mobile: 'meta' },
     { header: 'Out', value: (r) => (Number(r.qty_out) > 0 ? Number(r.qty_out) : null),

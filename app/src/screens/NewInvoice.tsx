@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
-import { fmtMoney, fmtQty, isoDate } from '../lib/format'
+import { fmtMoney, fmtQty, isoDate, fmtPacks } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useDialog } from '../components/Dialog'
 import { NewPartySheet } from '../components/NewPartySheet'
@@ -165,6 +165,24 @@ export default function NewInvoice() {
   const [addingParty, setAddingParty] = useState<string | null>(null)
 
   /**
+   * Put the keyboard on Add item.
+   *
+   * Choosing a customer closes the picker, and the button that opened it is
+   * gone from the page by then — so focus falls back to the document body and
+   * the next Tab leaves the page entirely, into the browser's own toolbar.
+   * From the person's side the keyboard simply stops working halfway through
+   * making a bill.
+   *
+   * After a frame, because the button does not exist until the screen has
+   * re-rendered with a customer on it.
+   */
+  const focusAddItem = useCallback(() => {
+    requestAnimationFrame(() => {
+      document.getElementById('inv-add-item')?.focus()
+    })
+  }, [])
+
+  /**
    * A customer created here is billed immediately, so the list the picker
    * reads has to gain them without a round trip — otherwise the rep adds the
    * shop, the picker reopens, and the shop they just created is not in it.
@@ -184,7 +202,8 @@ export default function NewInvoice() {
     setParty(row)
     setAddingParty(null)
     setPicking(null)
-  }, [])
+    focusAddItem()
+  }, [focusAddItem])
 
   // ---------------------------------------------------------------------------
   // Load
@@ -579,7 +598,8 @@ export default function NewInvoice() {
       const s = stockFor(l.productId)
       if (!reviseId && s && baseQty(l) > Number(s.on_hand)) {
         problem(
-          `${l.name}: only ${fmtQty(s.on_hand)} ${l.baseUom} in stock. Reduce the quantity.`,
+          `${l.name}: only ${fmtPacks(s.on_hand, l.packSize, l.packUom, l.baseUom)} in stock. ` +
+            'Reduce the quantity.',
         )
         return
       }
@@ -781,7 +801,12 @@ export default function NewInvoice() {
               : 'No items yet. Add what the customer is taking.'}
           </p>
           {canAddItems && (
-            <button className="primary" onClick={() => setPicking('product')} disabled={!party}>
+            <button
+              id="inv-add-item"
+              className="primary"
+              onClick={() => setPicking('product')}
+              disabled={!party}
+            >
               Add item
             </button>
           )}
@@ -802,7 +827,9 @@ export default function NewInvoice() {
                       {l.pendingBase !== null && (
                         <> · {fmtQty(l.pendingBase)} {l.baseUom} pending on the order</>
                       )}
-                      {s && <> · {fmtQty(s.on_hand)} {l.baseUom} in stock</>}
+                      {s && (
+                        <> · {fmtPacks(s.on_hand, l.packSize, l.packUom, l.baseUom)} in stock</>
+                      )}
                     </div>
                   </div>
                   {l.orderLineId ? (
@@ -887,7 +914,7 @@ export default function NewInvoice() {
                   <Banner tone="bad">
                     {overOrder
                       ? `The order has only ${fmtQty(l.pendingBase)} ${l.baseUom} left to bill.`
-                      : `Only ${fmtQty(s?.on_hand)} ${l.baseUom} in stock.`}
+                      : `Only ${fmtPacks(s?.on_hand, l.packSize, l.packUom, l.baseUom)} in stock.`}
                   </Banner>
                 )}
               </div>
@@ -896,7 +923,7 @@ export default function NewInvoice() {
 
           {canAddItems && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button onClick={() => setPicking('product')} disabled={!party}>
+              <button id="inv-add-item" onClick={() => setPicking('product')} disabled={!party}>
                 Add another item
               </button>
               {/*
@@ -1051,7 +1078,7 @@ export default function NewInvoice() {
           items={parties}
           keyOf={(p) => p.party_id}
           searchOf={(p) => `${p.party_name} ${p.party_code} ${p.route_name}`}
-          onPick={setParty}
+          onPick={(p) => { setParty(p); focusAddItem() }}
           onClose={() => setPicking(null)}
           emptyText="No customers yet."
           addLabel="Add a new customer"
@@ -1103,7 +1130,7 @@ export default function NewInvoice() {
               </div>
               <div style={{ marginTop: 4 }}>
                 <span className={`pill ${Number(p.on_hand) > 0 ? 'good' : 'bad'}`}>
-                  {fmtQty(p.on_hand)} {p.base_uom} in stock
+                  {fmtPacks(p.on_hand, p.pack_size, p.pack_uom, p.base_uom)} in stock
                 </span>
               </div>
             </>

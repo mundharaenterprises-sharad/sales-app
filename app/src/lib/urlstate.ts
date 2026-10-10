@@ -19,6 +19,26 @@ import { useSearchParams } from 'react-router-dom'
  * date should not be four presses of Back to undo; going into a bill and
  * coming out should be one.
  */
+/**
+ * Writes made in one go, applied in one go.
+ *
+ * `setSearchParams(fn)` looks like React's `setState(fn)` and is not. The
+ * function it hands you is the address as of the last RENDER, not as of the
+ * last write — so two filters set in the same handler both start from the
+ * same place, and the second silently throws the first away.
+ *
+ * That is not a theoretical problem. It is why the sales register's *Today*
+ * and *This week* buttons appeared dead: each sets From and then To, and the
+ * To wiped the From. The *Clear* button sets five filters and kept one.
+ *
+ * So writes within a single tick accumulate here instead. The first one takes
+ * a copy of the address; the rest amend that copy; a microtask after the
+ * handler finishes, it is dropped. Nothing has to remember to batch, which
+ * matters more than elegance — the failure is silent and looks like a dead
+ * button.
+ */
+let pending: URLSearchParams | null = null
+
 export function useUrlState(
   key: string,
   initial: string,
@@ -28,24 +48,24 @@ export function useUrlState(
 
   const set = useCallback(
     (v: string) => {
-      // The updater form, not the current params object: two of these called
-      // one after another in the same handler — which is exactly what a date
-      // preset does — would otherwise both read the same stale params and the
-      // second would undo the first.
       setParams(
         (prev) => {
-          const next = new URLSearchParams(prev)
+          if (!pending) {
+            pending = new URLSearchParams(prev)
+            // End of this handler, whenever that is.
+            queueMicrotask(() => { pending = null })
+          }
           // Absent means "whatever this screen starts with", so a filter that
           // is back at its starting value is dropped rather than written out.
           // That keeps the address to the things somebody actually chose.
           //
-          // Note this is compared against the default, NOT against empty.
-          // Emptying the From date is a real choice — it means every bill
-          // ever — and `?from=` has to survive as itself, or pressing All and
-          // then Back would quietly restore this month.
-          if (v === initial) next.delete(key)
-          else next.set(key, v)
-          return next
+          // Compared against the default, NOT against empty. Emptying the From
+          // date is a real choice — it means every bill ever — and `?from=`
+          // has to survive as itself, or pressing All and then Back would
+          // quietly restore this month.
+          if (v === initial) pending.delete(key)
+          else pending.set(key, v)
+          return new URLSearchParams(pending)
         },
         { replace: true },
       )
