@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, friendlyMessage } from '../lib/supabase'
-import { fmtDate, fmtMoney, fmtQty, isoDate } from '../lib/format'
+import { fmtDate, fmtMoney, fmtPacks, fmtQty, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Field, Row, Check, num } from '../components/FormSheet'
+import { money2, rate4 } from '../lib/precision'
 import { DateInput } from '../components/DateInput'
 import { Picker } from '../components/Picker'
 import { useDialog } from '../components/Dialog'
@@ -62,7 +63,13 @@ interface BillLine {
   pack_size: number
   rate: number
   qty_cancelled_base: number
-  product: { code: string; name: string; base_uom: string; pack_uom: string | null }
+  product: {
+    code: string
+    name: string
+    base_uom: string
+    pack_uom: string | null
+    pack_size: number
+  }
 }
 
 interface Line {
@@ -77,6 +84,42 @@ interface Line {
   rate: number
   qty: string
   restock: boolean
+
+  /**
+   * How the bill was written, kept so whole packs can go back as packs.
+   * packSize is 0 when the line was billed in base units, or when the
+   * product's pack size has been edited since the bill was raised — in which
+   * case dividing by it would no longer describe what went out.
+   */
+  packSize: number
+  packUom: string | null
+  packRate: number
+}
+
+/**
+ * One return line, in the unit that keeps the credit exact.
+ *
+ * A carton of 60 at 2,200 is 36.666666666666664 a piece — seventeen digits for
+ * a column that holds four. Credit 240 of those and the rounding shows up as a
+ * whole paisa, which is both wrong against the bill and, before migration 039,
+ * enough for the database to refuse the document outright.
+ *
+ * So whole cartons go back as cartons at the carton rate: nothing is divided,
+ * nothing is rounded, and the shop is credited exactly what it was charged.
+ * An odd number of pieces still has to be priced per piece, and is rounded
+ * here to the four places that will be stored, so the figure on this screen is
+ * the figure on the document.
+ */
+function payloadFor(l: Line, qty: number) {
+  if (l.packSize > 1 && qty % l.packSize === 0) {
+    return { uom: 'PACK' as const, qty: qty / l.packSize, rate: l.packRate }
+  }
+  return { uom: 'BASE' as const, qty, rate: rate4(l.rate) }
+}
+
+const creditFor = (l: Line, qty: number) => {
+  const p = payloadFor(l, qty)
+  return money2(p.qty * p.rate)
 }
 
 export default function NewReturn() {
@@ -161,7 +204,7 @@ export default function NewReturn() {
         .from('sales_invoice_line')
         .select(
           'id, line_no, product_id, uom, qty, qty_base, pack_size, rate, qty_cancelled_base,' +
-            ' product:product_id (code, name, base_uom, pack_uom)',
+            ' product:product_id (code, name, base_uom, pack_uom, pack_size)',
         )
         .eq('invoice_id', b.invoice_id)
         .order('line_no'),
@@ -194,6 +237,15 @@ export default function NewReturn() {
             Number(l.qty_base) -
             Number(l.qty_cancelled_base || 0) -
             (returned.get(l.id) ?? 0)
+
+          const billPack = Number(l.pack_size) || 1
+          // Only treat the bill's pack as a pack if the product still agrees
+          // with it. If somebody has changed the pack size since, "four
+          // cartons" no longer means the 240 pieces that went out, and the
+          // only honest unit left is the piece.
+          const packIntact =
+            l.uom === 'PACK' && billPack > 1 && Number(l.product.pack_size) === billPack
+
           return {
             key: l.id,
             invoiceLineId: l.id,
@@ -202,12 +254,15 @@ export default function NewReturn() {
             name: l.product.name,
             baseUom: l.product.base_uom,
             room,
-            // Per base unit, whatever the bill was written in: the return is
-            // entered in pieces, so the rate has to be in pieces too or the
-            // credit comes out forty times too big.
-            rate: Number(l.rate) / (l.uom === 'PACK' ? Number(l.pack_size) || 1 : 1),
+            // Per base unit, whatever the bill was written in: quantities are
+            // entered in pieces here, so the rate has to be in pieces too or
+            // the credit comes out sixty times too big.
+            rate: Number(l.rate) / (l.uom === 'PACK' ? billPack : 1),
             qty: '',
             restock: true,
+            packSize: packIntact ? billPack : 0,
+            packUom: packIntact ? l.product.pack_uom : null,
+            packRate: Number(l.rate),
           }
         })
         .filter((l) => l.room > 0),
@@ -219,8 +274,10 @@ export default function NewReturn() {
     [lines],
   )
 
+  // Added up exactly the way the database will add it up, line by line, so
+  // the total on the screen is the total on the document.
   const value = useMemo(
-    () => chosen.reduce((s, l) => s + Math.round(num(l.qty, 0) * l.rate * 100) / 100, 0),
+    () => chosen.reduce((s, l) => s + creditFor(l, num(l.qty, 0)), 0),
     [chosen],
   )
 
@@ -245,9 +302,7 @@ export default function NewReturn() {
       p_lines: chosen.map((l) => ({
         product_id: l.productId,
         invoice_line_id: l.invoiceLineId,
-        uom: 'BASE',
-        qty: num(l.qty, 0),
-        rate: l.rate,
+        ...payloadFor(l, num(l.qty, 0)),
         restock: l.restock,
       })),
     })
@@ -320,7 +375,7 @@ export default function NewReturn() {
         <>
           <p style={{ marginTop: 0 }}>
             {writeOff.map((l) => l.name).join(', ')} will credit{' '}
-            {fmtMoney(writeOff.reduce((s, l) => s + num(l.qty, 0) * l.rate, 0))} to{' '}
+            {fmtMoney(writeOff.reduce((s, l) => s + creditFor(l, num(l.qty, 0)), 0))} to{' '}
             {party.party_name} without going back into stock.
           </p>
           <p style={{ marginBottom: 0 }}>
@@ -424,9 +479,29 @@ export default function NewReturn() {
                           <span className="muted" style={{ fontSize: 12.5 }}>{l.code}</span>
                         </td>
                         <td data-label="Can come back" className="num">
-                          {fmtQty(l.room)} {l.baseUom}
+                          {fmtPacks(l.room, l.packSize, l.packUom, l.baseUom)}
+                          {l.packSize > 1 && (
+                            <>
+                              <br />
+                              <span className="muted" style={{ fontSize: 12.5 }}>
+                                {fmtQty(l.room)} {l.baseUom}
+                              </span>
+                            </>
+                          )}
                         </td>
-                        <td data-label="Rate" className="num">{fmtMoney(l.rate)}</td>
+                        <td data-label="Rate" className="num">
+                          {l.packSize > 1 ? (
+                            <>
+                              {fmtMoney(l.packRate)} / {l.packUom}
+                              <br />
+                              <span className="muted" style={{ fontSize: 12.5 }}>
+                                {fmtMoney(l.rate)} / {l.baseUom}
+                              </span>
+                            </>
+                          ) : (
+                            <>{fmtMoney(l.rate)}</>
+                          )}
+                        </td>
                         <td data-label="Coming back" className="num">
                           <input
                             type="text"
@@ -454,7 +529,7 @@ export default function NewReturn() {
                           </Check>
                         </td>
                         <td data-label="Credit" className="num">
-                          {q > 0 ? fmtMoney(q * l.rate) : <span className="muted">—</span>}
+                          {q > 0 ? fmtMoney(creditFor(l, q)) : <span className="muted">—</span>}
                         </td>
                       </tr>
                     )

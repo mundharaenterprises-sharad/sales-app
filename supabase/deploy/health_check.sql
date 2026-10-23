@@ -131,6 +131,21 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  -- 039 and 040 replace functions without changing their signatures, so the
+  -- only thing that distinguishes them is the text of the functions: the
+  -- rounds that bring a staged rate down to the four decimal places the
+  -- columns hold.
+  ('040', 'order, bill and purchase rates rounded too',
+                                 (select count(*) from pg_proc
+                                   where proname in ('create_sales_order',
+                                                     'modify_sales_order',
+                                                     'create_sales_invoice_core',
+                                                     'post_purchase')
+                                     and prosrc like '%round(x.qty, 4)%') = 4),
+  ('039', 'return rates rounded before they are totalled',
+                                 exists (select 1 from pg_proc
+                                          where proname = 'post_sales_return'
+                                            and prosrc like '%round(x.rate, 4)%')),
   -- 036 is one condition on one view, so its signature is that condition:
   -- the register's definition mentioning is_opening at all.
   ('038', 'returns you can read back',

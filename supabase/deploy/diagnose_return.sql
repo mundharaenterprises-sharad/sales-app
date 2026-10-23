@@ -1,6 +1,24 @@
 -- =============================================================================
 -- diagnose_return.sql
 --
+-- SUPERSEDED, AND KEPT AS A WARNING. Do not reach for this one again.
+--
+-- It rolls back, so it could never have found the bug it was written to find.
+-- The guard that was refusing returns is a DEFERRED constraint trigger: it
+-- does not fire on the insert, it fires at COMMIT, and a transaction that is
+-- rolled back never commits. This script reported "both halves work on this
+-- bill" over and over while the live app was refusing the same bill.
+--
+-- The fault is in migrations 039 and 040. The test that actually catches it is
+-- supabase/tests/023_return_precision_tests.sql, and the thing that makes it
+-- work is that it COMMITS.
+--
+-- Anything that has to test a deferred check must either commit, or force the
+-- check with `set constraints all immediate`. A rolled-back diagnostic cannot
+-- see this class of failure at all.
+--
+-- What follows is the original, unchanged.
+--
 -- Run the WHOLE file in the Supabase SQL Editor. It changes nothing.
 --
 -- "One of the values is not allowed" is Postgres refusing a value, and it

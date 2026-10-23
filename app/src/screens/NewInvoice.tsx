@@ -9,6 +9,7 @@ import type { NewParty } from '../components/NewPartySheet'
 import { Picker } from '../components/Picker'
 import { Check, num } from '../components/FormSheet'
 import { DateInput } from '../components/DateInput'
+import { rate4 } from '../lib/precision'
 
 /**
  * Raising a bill.
@@ -367,7 +368,13 @@ export default function NewInvoice() {
               packSize: productPack,
               uom: asPack ? ('PACK' as const) : ('BASE' as const),
               qty: String(asPack ? pending / packSize : pending),
-              rate: String(asPack ? Number(r.rate) : Number(r.rate) / (r.uom === 'PACK' ? packSize : 1)),
+              // A divided rate is rounded to the four places the rate column
+              // holds, so the bill totals the same here as in the database.
+              rate: String(
+                asPack
+                  ? Number(r.rate)
+                  : rate4(Number(r.rate) / (r.uom === 'PACK' ? packSize : 1)),
+              ),
               // Whatever the rep agreed at the shop, carried forward. Editable:
               // it is what was quoted, not a rule the office cannot correct.
               discPct: r.line_discount_pct ? String(Number(r.line_discount_pct)) : '',
@@ -480,7 +487,9 @@ export default function NewInvoice() {
   /** Switching between pieces and boxes rescales the rate to match. */
   const switchUom = (l: Line, uom: 'BASE' | 'PACK') => {
     const s = stockFor(l.productId)
-    const perUnit = s ? Number(s.sale_rate) : num(l.rate, 0) / (l.uom === 'PACK' ? l.packSize : 1)
+    const perUnit = s
+      ? Number(s.sale_rate)
+      : rate4(num(l.rate, 0) / (l.uom === 'PACK' ? l.packSize : 1))
     const packRate =
       s?.pack_sale_rate != null
         ? Number(s.pack_sale_rate)

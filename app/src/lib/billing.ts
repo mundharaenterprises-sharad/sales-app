@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { rate4 } from './precision'
 
 /**
  * Turning order lines into bill lines.
@@ -60,9 +61,12 @@ export function pendingAsLine(r: OrderLineRow): BillLine | null {
     product_id: r.product_id,
     uom: asPack ? 'PACK' : 'BASE',
     qty: asPack ? pending / packSize : pending,
+    // A divided rate is rounded to the four places the rate column holds, so
+    // the bill totals the same here as it does in the database. See
+    // lib/precision.ts.
     rate: asPack
       ? Number(r.rate)
-      : Number(r.rate) / (r.uom === 'PACK' && packSize > 1 ? packSize : 1),
+      : rate4(Number(r.rate) / (r.uom === 'PACK' && packSize > 1 ? packSize : 1)),
     line_discount_pct: r.line_discount_pct == null ? null : Number(r.line_discount_pct),
   }
 }
