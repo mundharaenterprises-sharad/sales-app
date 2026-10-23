@@ -89,8 +89,18 @@ export function friendlyMessage(e: unknown): string {
     case '23505':
       // Unique violation. Codes are the only unique thing a person types.
       return 'That code is already in use. Codes must be unique.'
-    case '23514':
-      return 'One of the values is not allowed. Check for negative numbers or a missing date.'
+    case '23514': {
+      // A CHECK constraint. The plain sentence on its own was a dead end: it
+      // sent somebody hunting through a form for a negative number that was
+      // not there, while the database had already said precisely which rule
+      // was broken. Postgres puts the constraint's name in the message, so
+      // carry it through — it means nothing to the office and everything to
+      // whoever is asked to fix it.
+      const named = /violates check constraint "([^"]+)"/.exec(message)?.[1]
+      const base =
+        'One of the values is not allowed. Check for negative numbers or a missing date.'
+      return named ? `${base} (${named})` : base
+    }
     case 'PGRST301':
     case '42501':
       return 'You do not have permission to see that.'
