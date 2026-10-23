@@ -24,6 +24,9 @@ interface Head {
   supplier_bill_date: string | null
   master_name: string | null
   gross_total: number
+  line_discount_total: number
+  bill_discount_amount: number
+  discount_total: number
   other_charges: number
   net_total: number
   status: string
@@ -41,6 +44,10 @@ interface LineRow {
   rate: number
   qty_base: number
   amount: number
+  line_discount_pct: number | null
+  line_discount_amount: number
+  allocated_bill_discount: number
+  net_amount: number
   product: { code: string; name: string; base_uom: string; pack_uom: string | null } | null
 }
 
@@ -181,6 +188,9 @@ export default function PurchaseView() {
               <div className="stat">{fmtMoney(head.net_total)}</div>
               <p>
                 {fmtMoney(head.gross_total)} goods
+                {Number(head.discount_total) > 0
+                  ? ` − ${fmtMoney(head.discount_total)} discount`
+                  : ''}
                 {Number(head.other_charges) > 0
                   ? ` + ${fmtMoney(head.other_charges)} charges`
                   : ''}
@@ -199,7 +209,8 @@ export default function PurchaseView() {
               <th>Product</th>
               <th className="num">Qty</th>
               <th className="num">Rate</th>
-              <th className="num">Amount</th>
+              <th className="num">Discount</th>
+              <th className="num">Cost</th>
             </tr>
           </thead>
           <tbody>
@@ -224,7 +235,43 @@ export default function PurchaseView() {
                   )}
                 </td>
                 <td data-label="Rate" className="num">{fmtMoney(l.rate)}</td>
-                <td data-label="Amount" className="num strong">{fmtMoney(l.amount)}</td>
+                <td data-label="Discount" className="num">
+                  {Number(l.line_discount_amount) + Number(l.allocated_bill_discount) > 0 ? (
+                    <>
+                      − {fmtMoney(Number(l.line_discount_amount) +
+                                  Number(l.allocated_bill_discount))}
+                      {l.line_discount_pct != null && Number(l.line_discount_pct) > 0 && (
+                        <>
+                          <br />
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {fmtQty(l.line_discount_pct)}% on the line
+                          </span>
+                        </>
+                      )}
+                      {Number(l.allocated_bill_discount) > 0 && (
+                        <>
+                          <br />
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {fmtMoney(l.allocated_bill_discount)} share of the bill
+                          </span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+                <td data-label="Cost" className="num strong">
+                  {fmtMoney(l.net_amount)}
+                  {Number(l.net_amount) !== Number(l.amount) && (
+                    <>
+                      <br />
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        billed {fmtMoney(l.amount)}
+                      </span>
+                    </>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

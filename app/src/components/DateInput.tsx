@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isoDate } from '../lib/format'
 
 /**
  * A date box you can type into.
@@ -30,6 +31,20 @@ import { useEffect, useRef, useState } from 'react'
  * Clearing the box on purpose still clears the filter: that is settled on the
  * way out rather than on every keystroke, because an empty box mid-typing and
  * an empty box left empty look identical until the person moves on.
+ *
+ * **Nothing can be dated ahead of today.** Every box in the app stops at
+ * today unless it is told otherwise, which is the app's half of migration 042
+ * — the database refuses a future-dated document outright, and this is what
+ * keeps anybody from getting that far. The `max` attribute greys out later
+ * days in the calendar; the check on the way out is for a date typed straight
+ * in, which `max` alone does not stop. A date beyond the limit is simply never
+ * passed on, and the box puts back whatever is actually in force when the
+ * person leaves it.
+ *
+ * Back-dating is untouched: a day of collections keyed in the next morning, a
+ * purchase entered when the paperwork turns up. Only the future is closed.
+ * Pass `max=""` for a box that genuinely needs to look ahead — there are none
+ * today.
  */
 
 /** A complete calendar date, not a year with hopes. */
@@ -46,6 +61,7 @@ export function DateInput({
   value,
   onChange,
   id,
+  max,
   ...rest
 }: {
   value: string
@@ -54,6 +70,13 @@ export function DateInput({
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
   const [text, setText] = useState(value)
   const typing = useRef(false)
+
+  // Today, unless the caller says otherwise. An explicit max="" opts out.
+  const limit = max === undefined ? isoDate() : max === '' ? undefined : String(max)
+
+  /** Whole, and not later than the limit. */
+  const acceptable = (v: string) =>
+    isWholeDate(v) && (limit === undefined || v <= limit)
 
   // Follow the outside world — a preset button, a Back, a reload — but never
   // while somebody has their fingers in the box.
@@ -66,6 +89,7 @@ export function DateInput({
       {...rest}
       id={id}
       type="date"
+      max={limit}
       value={text}
       onFocus={(e) => {
         typing.current = true
@@ -76,16 +100,20 @@ export function DateInput({
         setText(v)
         // Only a real date goes any further. "" is deliberately not sent here:
         // it is what a half-typed box reports, and clearing a filter on every
-        // keystroke would reload the screen under the person typing.
-        if (isWholeDate(v)) onChange(v)
+        // keystroke would reload the screen under the person typing. Nor does
+        // a date past the limit: it is shown in the box while it is being
+        // typed — "2027" is a reasonable thing to type on the way to a year —
+        // but it never becomes the value.
+        if (acceptable(v)) onChange(v)
       }}
       onBlur={(e) => {
         typing.current = false
         // Left empty on purpose — now it counts.
         if (text === '') onChange('')
-        // Left half-finished: put back whatever the app actually holds,
-        // rather than leaving a box showing a date that is not in force.
-        else if (!isWholeDate(text)) setText(value)
+        // Left half-finished, or past the limit: put back whatever the app
+        // actually holds, rather than leaving a box showing a date that is not
+        // in force. A future date snapping back is the screen saying no.
+        else if (!acceptable(text)) setText(value)
         rest.onBlur?.(e)
       }}
     />

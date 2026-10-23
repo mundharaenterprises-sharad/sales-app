@@ -6,6 +6,8 @@ import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { Picker } from '../components/Picker'
 import { num } from '../components/FormSheet'
 import { DateInput } from '../components/DateInput'
+import { useLineFocus, focusById } from '../lib/linefocus'
+import { money2, rate4 } from '../lib/precision'
 
 /**
  * Recording goods in.
@@ -19,6 +21,24 @@ import { DateInput } from '../components/DateInput'
  * chosen, the picker only offers others from the same side of the business.
  * That is the database's rule, enforced here so it is a narrowed list rather
  * than a refusal at the end.
+ *
+ * **Discounts**, per line and on the whole bill, work exactly as they do on a
+ * sales bill — enter the percentage or the rupees and the other is worked out.
+ * A scheme discount from Parle or Current used to have to be absorbed by
+ * typing a lower rate than the supplier's bill showed, which made the entry
+ * disagree with the paper. Now the rate is what the bill says and the discount
+ * is recorded as a discount.
+ *
+ * A bill-wise discount comes off the goods and not off the freight — the
+ * supplier is not discounting the transporter — and the database spreads it
+ * across the lines so each product carries its share of the saving. That
+ * matters because **the discount lowers the recorded cost of the stock**: a
+ * carton bought at 1,900 with 5% off is costed at 1,805, which is what was
+ * paid and therefore what any future margin should be measured against.
+ *
+ * **The keyboard** walks it the way it walks a bill: choose the supplier, Tab
+ * to *Add product*, then unit, quantity, rate, discount, Enter for the next
+ * item. See lib/linefocus.ts for why the cursor lands on the unit box.
  */
 
 interface Supplier {
@@ -49,6 +69,8 @@ interface Line {
   uom: 'BASE' | 'PACK'
   qty: string
   rate: string
+  /** Per cent off this line. Blank means none. */
+  discPct: string
 }
 
 const today = () => isoDate()
@@ -69,8 +91,15 @@ export default function NewPurchase() {
   const [remarks, setRemarks] = useState('')
   const [lines, setLines] = useState<Line[]>([])
 
+  // A discount on the whole bill, entered either way round. The mode decides
+  // which of the two the database is sent; it works out the other.
+  const [discMode, setDiscMode] = useState<'AMOUNT' | 'PCT'>('AMOUNT')
+  const [billDisc, setBillDisc] = useState('')
+
   const [pickSupplier, setPickSupplier] = useState(false)
   const [pickProduct, setPickProduct] = useState(false)
+
+  const { focusLine } = useLineFocus()
 
   const load = useCallback(async () => {
     const [s, p] = await Promise.all([
@@ -108,19 +137,22 @@ export default function NewPurchase() {
 
   const addProduct = (p: ProductRow) => {
     const byPack = p.pack_uom !== null && p.pack_size > 1
+    const key = `${p.id}-${Date.now()}`
     setLines((ls) => [
       ...ls,
       {
-        key: `${p.id}-${Date.now()}`,
+        key,
         product: p,
         uom: byPack ? 'PACK' : 'BASE',
         qty: '',
         rate: String(
           byPack ? (p.pack_purchase_rate ?? p.purchase_rate * p.pack_size) : p.purchase_rate,
         ),
+        discPct: '',
       },
     ])
     setPickProduct(false)
+    focusLine(key)
   }
 
   const patch = (key: string, p: Partial<Line>) =>
@@ -128,16 +160,39 @@ export default function NewPurchase() {
 
   const drop = (key: string) => setLines((ls) => ls.filter((l) => l.key !== key))
 
-  const amountOf = (l: Line) => {
+  /** What the line comes to before any discount — what the supplier's bill says. */
+  const grossOf = (l: Line) => {
     const q = num(l.qty, 0)
     const r = num(l.rate, 0)
     if (Number.isNaN(q) || Number.isNaN(r)) return 0
-    return Math.round(q * r * 100) / 100
+    return money2(q * r)
   }
 
-  const gross = lines.reduce((s, l) => s + amountOf(l), 0)
-  const otherCharges = Number.isNaN(num(other, 0)) ? 0 : num(other, 0)
-  const net = Math.round((gross + otherCharges) * 100) / 100
+  /** Rounded the way the database rounds it, so the two cannot disagree. */
+  const discountOf = (l: Line) => {
+    const pct = num(l.discPct, 0)
+    if (Number.isNaN(pct) || pct <= 0) return 0
+    return money2((grossOf(l) * pct) / 100)
+  }
+
+  const netOf = (l: Line) => money2(grossOf(l) - discountOf(l))
+
+  const gross = lines.reduce((s, l) => s + grossOf(l), 0)
+  const lineDisc = lines.reduce((s, l) => s + discountOf(l), 0)
+  const afterLines = money2(gross - lineDisc)
+
+  // An amount is taken as typed; a percentage is of the goods after the line
+  // discounts, which is the base the database uses too.
+  const billDiscValue = useMemo(() => {
+    const v = num(billDisc, 0)
+    if (Number.isNaN(v) || v <= 0) return 0
+    return discMode === 'AMOUNT' ? money2(v) : money2((afterLines * v) / 100)
+  }, [billDisc, discMode, afterLines])
+
+  const otherCharges = Number.isNaN(num(other, 0)) ? 0 : money2(num(other, 0))
+
+  // Goods, less the discounts, then charges on top.
+  const net = money2(afterLines - billDiscValue + otherCharges)
 
   const save = useCallback(async () => {
     setError(null)
@@ -161,6 +216,19 @@ export default function NewPurchase() {
         setError(`${l.product.name}: rate must be a plain number — no commas.`)
         return
       }
+      const d = num(l.discPct, 0)
+      if (l.discPct.trim() !== '' && (Number.isNaN(d) || d < 0 || d > 100)) {
+        setError(`${l.product.name}: a discount has to be between 0 and 100 per cent.`)
+        return
+      }
+    }
+
+    if (billDiscValue > afterLines) {
+      setError(
+        `The bill discount of ${fmtMoney(billDiscValue)} is more than the ` +
+          `${fmtMoney(afterLines)} of goods on this purchase.`,
+      )
+      return
     }
 
     setBusy(true)
@@ -171,13 +239,19 @@ export default function NewPurchase() {
         product_id: l.product.id,
         uom: l.uom,
         qty: num(l.qty, 0),
-        rate: num(l.rate, 0),
-        pack_size: l.product.pack_size,
+        // Four places, because that is what the rate column holds. See
+        // lib/precision.ts and migration 040.
+        rate: rate4(num(l.rate, 0)),
+        // The percentage travels, not the rupees — an amount agreed on this
+        // quantity would be wrong if the quantity were ever changed.
+        line_discount_pct: l.discPct.trim() === '' ? null : num(l.discPct, 0),
       })),
       p_other_charges: otherCharges,
       p_supplier_bill_no: billNo.trim() || null,
       p_supplier_bill_date: billDate || null,
       p_remarks: remarks.trim() || null,
+      p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
+      p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
     })
     setBusy(false)
 
@@ -189,7 +263,11 @@ export default function NewPurchase() {
 
     const r = data as { purchase_id: string; doc_no: string }
     nav(`/purchases/${r.purchase_id}`, { state: { justCreated: r.doc_no } })
-  }, [supplier, date, lines, otherCharges, billNo, billDate, remarks, nav])
+    // Every piece of state this reads has to be named here, or the save sends
+    // a stale copy of it — bug #12, which once would have saved every cash
+    // bill as credit.
+  }, [supplier, date, lines, otherCharges, billNo, billDate, remarks, nav,
+      billDisc, discMode, billDiscValue, afterLines])
 
   if (suppliers === null || products === null) return <Loading what="Loading" />
 
@@ -269,6 +347,7 @@ export default function NewPurchase() {
               <th style={{ width: 110 }}>Unit</th>
               <th className="num" style={{ width: 110 }}>Qty</th>
               <th className="num" style={{ width: 130 }}>Rate</th>
+              <th className="num" style={{ width: 90 }}>Disc %</th>
               <th className="num" style={{ width: 130 }}>Amount</th>
               <th style={{ width: 44 }}></th>
             </tr>
@@ -286,6 +365,7 @@ export default function NewPurchase() {
                 <td data-label="Unit">
                   {l.product.pack_uom && l.product.pack_size > 1 ? (
                     <select
+                      data-unit-for={l.key}
                       aria-label={`Unit for ${l.product.name}`}
                       value={l.uom}
                       onChange={(e) => {
@@ -312,9 +392,18 @@ export default function NewPurchase() {
                   <input
                     type="text"
                     inputMode="decimal"
+                    data-qty-for={l.key}
                     aria-label={`Quantity of ${l.product.name}`}
                     value={l.qty}
                     onChange={(e) => patch(l.key, { qty: e.target.value })}
+                    onKeyDown={(e) => {
+                      // Enter asks for the next product, which closes the
+                      // loop: pick, type the quantity, Enter, pick again.
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        setPickProduct(true)
+                      }
+                    }}
                     style={{ textAlign: 'right' }}
                   />
                 </td>
@@ -328,7 +417,28 @@ export default function NewPurchase() {
                     style={{ textAlign: 'right' }}
                   />
                 </td>
-                <td data-label="Amount" className="num strong">{fmtMoney(amountOf(l))}</td>
+                <td data-label="Disc %" className="num">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label={`Discount per cent on ${l.product.name}`}
+                    value={l.discPct}
+                    placeholder="0"
+                    onChange={(e) => patch(l.key, { discPct: e.target.value })}
+                    style={{ textAlign: 'right' }}
+                  />
+                </td>
+                <td data-label="Amount" className="num strong">
+                  {fmtMoney(netOf(l))}
+                  {discountOf(l) > 0 && (
+                    <>
+                      <br />
+                      <span className="muted" style={{ fontSize: 12.5 }}>
+                        was {fmtMoney(grossOf(l))}
+                      </span>
+                    </>
+                  )}
+                </td>
                 <td className="num">
                   <button className="ghost" onClick={() => drop(l.key)} aria-label="Remove">
                     ✕
@@ -338,7 +448,7 @@ export default function NewPurchase() {
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 20 }}>
+                <td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 20 }}>
                   No products yet.
                 </td>
               </tr>
@@ -348,11 +458,33 @@ export default function NewPurchase() {
       </div>
 
       <div className="card card-pad" style={{ marginTop: 12 }}>
-        <button onClick={() => setPickProduct(true)} disabled={busy}>
+        <button id="pu-add-item" onClick={() => setPickProduct(true)} disabled={busy}>
           Add product
         </button>
 
         <div className="form-row" style={{ marginTop: 14 }}>
+          <label className="inline-field">
+            <span>Discount on the whole bill</span>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                inputMode="decimal"
+                aria-label="Discount on the whole bill"
+                value={billDisc}
+                placeholder="0"
+                onChange={(e) => setBillDisc(e.target.value)}
+                style={{ width: 100, textAlign: 'right' }}
+              />
+              <select
+                aria-label="Discount in rupees or per cent"
+                value={discMode}
+                onChange={(e) => setDiscMode(e.target.value as 'AMOUNT' | 'PCT')}
+              >
+                <option value="AMOUNT">Rs</option>
+                <option value="PCT">%</option>
+              </select>
+            </span>
+          </label>
           <label className="inline-field">
             <span>Other charges</span>
             <input
@@ -376,9 +508,15 @@ export default function NewPurchase() {
         </div>
 
         <p className="hint" style={{ marginTop: 10 }}>
-          Freight, loading and the like go in Other charges. They are added to the
-          total but not spread across the products, so they do not change any
-          product&rsquo;s cost.
+          A discount comes off the goods and is spread across the lines, so each
+          product&rsquo;s recorded cost drops with it &mdash; a carton bought at
+          1,900 with 5% off is costed at 1,805.
+        </p>
+
+        <p className="hint" style={{ marginTop: 6 }}>
+          Freight, loading and the like go in Other charges. They are added
+          <em> after</em> the discount, and are not spread across the products,
+          so they do not change any product&rsquo;s cost.
         </p>
 
         <div className="tiles" style={{ marginTop: 14 }}>
@@ -386,6 +524,22 @@ export default function NewPurchase() {
             <h3>Goods</h3>
             <div className="stat">{fmtMoney(gross)}</div>
             <p>{lines.length} line{lines.length === 1 ? '' : 's'}</p>
+          </div>
+          <div className="tile">
+            <h3>Discount</h3>
+            <div className="stat">
+              {lineDisc + billDiscValue > 0 ? '− ' : ''}
+              {fmtMoney(lineDisc + billDiscValue)}
+            </div>
+            <p>
+              {lineDisc > 0 && billDiscValue > 0
+                ? `${fmtMoney(lineDisc)} on lines, ${fmtMoney(billDiscValue)} on the bill`
+                : lineDisc > 0
+                  ? 'on the lines'
+                  : billDiscValue > 0
+                    ? 'on the whole bill'
+                    : '\u00a0'}
+            </p>
           </div>
           <div className="tile">
             <h3>Other charges</h3>
@@ -420,6 +574,9 @@ export default function NewPurchase() {
           onPick={(s) => {
             setSupplier(s)
             setPickSupplier(false)
+            // Straight on to the goods, rather than Tab falling through to
+            // whatever the browser thinks is next.
+            focusById('pu-add-item')
           }}
           onClose={() => setPickSupplier(false)}
           emptyText="No suppliers match."

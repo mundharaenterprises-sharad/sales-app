@@ -131,6 +131,22 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('042', 'nothing can be dated in the future',
+                                 to_regprocedure('app.tg_no_future_date()') is not null
+                             and (select count(*) from pg_trigger
+                                   where tgname like '%\_not\_future') = 11),
+  ('041', 'discounts on a purchase',
+                                 to_regprocedure('app.spread_amount(numeric,jsonb)') is not null
+                             and to_regprocedure('public.post_purchase(uuid,date,jsonb,numeric,text,date,text,numeric,numeric)') is not null
+                             and to_regprocedure('public.post_purchase(uuid,date,jsonb,numeric,text,date,text)') is null
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'purchase_line'
+                                            and column_name = 'allocated_bill_discount')
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'purchase'
+                                            and column_name = 'bill_discount_amount')),
   -- 039 and 040 replace functions without changing their signatures, so the
   -- only thing that distinguishes them is the text of the functions: the
   -- rounds that bring a staged rate down to the four decimal places the

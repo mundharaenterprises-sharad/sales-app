@@ -138,6 +138,16 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/023_return_precision_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Discounts on a purchase"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/024_purchase_discount_tests.sql" 2>&1 | strip
+
+echo
+echo "==> Nothing dated in the future"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/025_no_future_date_tests.sql" 2>&1 | strip
+
+echo
 echo "==> Safe update tests"
 # Reads what is installed rather than exercising it, so it runs against the
 # database the discount suite just built.

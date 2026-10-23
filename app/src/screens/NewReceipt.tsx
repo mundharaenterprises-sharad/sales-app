@@ -54,6 +54,10 @@ export default function NewReceipt() {
   const [party, setParty] = useState<PartyRow | null>(null)
 
   const [bills, setBills] = useState<OpenBill[] | null>(null)
+  // Set when a customer is chosen, cleared once the keyboard has been put on
+  // their first bill. The bills arrive from the server after the pick, so this
+  // cannot be done in the picker's own handler — there is nothing to focus yet.
+  const [focusFirstBill, setFocusFirstBill] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
 
   // Today, unless we were sent here from a payment that was dated otherwise —
@@ -154,6 +158,33 @@ export default function NewReceipt() {
       alive = false
     }
   }, [party, params])
+
+  /**
+   * Straight from the customer to the first bill.
+   *
+   * Choosing a customer used to leave the cursor on the chooser, so the next
+   * Tab went wherever the browser fancied — the same gap the billing and
+   * purchase screens close by jumping to Add product. Here the next thing
+   * anybody does is put money against the oldest bill, so that is where the
+   * keyboard goes; with no open bills it goes to the amount instead, which is
+   * how money on account is taken.
+   *
+   * After a frame, because the boxes do not exist until the bills have
+   * rendered.
+   */
+  useEffect(() => {
+    if (!focusFirstBill || bills === null) return
+    setFocusFirstBill(false)
+    const first = bills[0]
+    requestAnimationFrame(() => {
+      if (first) {
+        focusEl(`[data-pay-for="${CSS.escape(first.invoice_id)}"]`) ||
+          focusEl('#rc-amount')
+      } else {
+        focusEl('#rc-amount')
+      }
+    })
+  }, [focusFirstBill, bills])
 
   // ---------------------------------------------------------------------------
 
@@ -500,6 +531,7 @@ export default function NewReceipt() {
             setParty(p)
             setAmountTouched(false)
             setAmount('')
+            setFocusFirstBill(true)
           }}
           onClose={() => setPicking(false)}
           emptyText="No customers yet."
