@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { fmtMoney, isoDate } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
@@ -39,6 +39,14 @@ import { money2, rate4 } from '../lib/precision'
  * **The keyboard** walks it the way it walks a bill: choose the supplier, Tab
  * to *Add product*, then unit, quantity, rate, discount, Enter for the next
  * item. See lib/linefocus.ts for why the cursor lands on the unit box.
+ *
+ * **Correcting one** (`?revise=<id>`, migration 044) opens this same screen
+ * with the purchase loaded, because a correction is the same job as an entry
+ * and two screens would drift apart within a month — the lesson from orders,
+ * which are taken and corrected on one screen for the same reason. Saving
+ * cancels the original and posts this in its place, in one transaction, so
+ * there is no moment where the goods are counted twice or not at all. It is
+ * refused if any of what the original brought in has already been sold.
  */
 
 interface Supplier {
@@ -77,6 +85,9 @@ const today = () => isoDate()
 
 export default function NewPurchase() {
   const nav = useNavigate()
+  const [params] = useSearchParams()
+  /** The purchase being corrected, if this screen was opened to correct one. */
+  const revising = params.get('revise')
 
   const [suppliers, setSuppliers] = useState<Supplier[] | null>(null)
   const [products, setProducts] = useState<ProductRow[] | null>(null)
@@ -122,6 +133,84 @@ export default function NewPurchase() {
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * Load the purchase being corrected, once the product list is in.
+   *
+   * The lines are rebuilt from the product master rather than from the stored
+   * line, because the unit dropdown and the rates on this screen come from the
+   * master — a line whose product has since been edited has to show what the
+   * product IS, or the screen offers a carton size that no longer exists.
+   * Quantity, rate and discount are the purchase's own and are carried across
+   * exactly.
+   */
+  useEffect(() => {
+    if (!revising || !products || !suppliers) return
+    let alive = true
+    void (async () => {
+      const [h, l] = await Promise.all([
+        supabase.from('v_purchase_list').select('*').eq('purchase_id', revising).single(),
+        supabase.from('purchase_line').select('*').eq('purchase_id', revising).order('line_no'),
+      ])
+      if (!alive) return
+      if (h.error) { setError(friendlyMessage(h.error)); return }
+
+      const head = h.data as {
+        supplier_id: string
+        purchase_date: string
+        supplier_bill_no: string | null
+        supplier_bill_date: string | null
+        other_charges: number
+        bill_discount_amount: number
+        remarks: string | null
+        status: string
+        doc_no: string
+      }
+
+      if (head.status !== 'ACTIVE') {
+        setError(`${head.doc_no} is already cancelled, so it cannot be corrected.`)
+        return
+      }
+
+      setSupplier(suppliers.find((x) => x.id === head.supplier_id) ?? null)
+      setDate(head.purchase_date)
+      setBillNo(head.supplier_bill_no ?? '')
+      setBillDate(head.supplier_bill_date ?? '')
+      setOther(Number(head.other_charges) ? String(Number(head.other_charges)) : '')
+      setRemarks(head.remarks ?? '')
+      setDiscMode('AMOUNT')
+      setBillDisc(
+        Number(head.bill_discount_amount) ? String(Number(head.bill_discount_amount)) : '',
+      )
+
+      const rows = (l.data ?? []) as unknown as {
+        id: string
+        product_id: string
+        uom: 'BASE' | 'PACK'
+        qty: number
+        rate: number
+        line_discount_pct: number | null
+      }[]
+
+      setLines(
+        rows
+          .map((r) => {
+            const prod = products.find((x) => x.id === r.product_id)
+            if (!prod) return null
+            return {
+              key: `${r.id}`,
+              product: prod,
+              uom: r.uom,
+              qty: String(Number(r.qty)),
+              rate: String(Number(r.rate)),
+              discPct: r.line_discount_pct ? String(Number(r.line_discount_pct)) : '',
+            }
+          })
+          .filter(Boolean) as Line[],
+      )
+    })()
+    return () => { alive = false }
+  }, [revising, products, suppliers])
 
   // The master group of the purchase, decided by whatever went on it first.
   const master = lines[0]?.product.master_code ?? null
@@ -232,7 +321,9 @@ export default function NewPurchase() {
     }
 
     setBusy(true)
-    const { data, error } = await supabase.rpc('post_purchase', {
+    // One shape of arguments for both calls: a correction is the same entry
+    // plus the document it replaces, and the database does the cancelling.
+    const args = {
       p_supplier_id: supplier.id,
       p_purchase_date: date,
       p_lines: lines.map((l) => ({
@@ -252,12 +343,36 @@ export default function NewPurchase() {
       p_remarks: remarks.trim() || null,
       p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
       p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
-    })
+    }
+
+    const { data, error } = revising
+      ? await supabase.rpc('revise_purchase', { p_purchase_id: revising, ...args })
+      : await supabase.rpc('post_purchase', args)
     setBusy(false)
 
     if (error) {
       const de = asDbError(error)
-      setError(de.message ?? friendlyMessage(error))
+      let msg = de.message ?? friendlyMessage(error)
+      // SA001 carries the shortfall as JSON. "Some of what this purchase
+      // brought in has already gone out" is true but not actionable on its
+      // own; which product, and how much, is.
+      try {
+        const short = JSON.parse(String(de.details ?? '[]')) as {
+          product: string
+          taking_back: number
+          in_stock: number
+        }[]
+        if (short.length > 0) {
+          msg +=
+            ' ' +
+            short
+              .map((x) => `${x.product}: ${x.taking_back} went in, only ${x.in_stock} left.`)
+              .join(' ')
+        }
+      } catch {
+        /* no detail to add */
+      }
+      setError(msg)
       return
     }
 
@@ -267,24 +382,38 @@ export default function NewPurchase() {
     // a stale copy of it — bug #12, which once would have saved every cash
     // bill as credit.
   }, [supplier, date, lines, otherCharges, billNo, billDate, remarks, nav,
-      billDisc, discMode, billDiscValue, afterLines])
+      billDisc, discMode, billDiscValue, afterLines, revising])
 
   if (suppliers === null || products === null) return <Loading what="Loading" />
 
   return (
     <>
       <div className="page-head">
-        <h1>New purchase</h1>
-        <span className="sub">Goods in from a supplier</span>
+        <h1>{revising ? 'Correct purchase' : 'New purchase'}</h1>
+        <span className="sub">
+          {revising
+            ? 'The original is cancelled and this is entered in its place'
+            : 'Goods in from a supplier'}
+        </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/purchases')}>Cancel</button>
           <button className="primary" onClick={() => void save()} disabled={busy}>
-            {busy ? <Spinner /> : 'Save purchase'}
+            {busy ? <Spinner /> : revising ? 'Save correction' : 'Save purchase'}
           </button>
         </span>
       </div>
 
       <ErrorBanner error={error} />
+
+      {revising && (
+        <Banner tone="warn">
+          Saving this cancels the original purchase and enters this one in its
+          place. It is refused if any of what the original brought in has
+          already been sold. Changing a rate also changes the average cost from
+          this purchase&rsquo;s date onward, and so the margin on everything
+          sold after it — which is right if the rate was keyed wrong.
+        </Banner>
+      )}
 
       {suppliers.length === 0 && (
         <Banner tone="warn">

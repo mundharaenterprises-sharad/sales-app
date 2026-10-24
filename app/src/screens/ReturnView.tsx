@@ -5,6 +5,8 @@ import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useSession } from '../lib/session'
 import { useDialog } from '../components/Dialog'
+import { useBillPage } from '../lib/printpage'
+import { VoucherSheet } from '../components/VoucherSheet'
 
 /**
  * One return, and what it did.
@@ -19,6 +21,12 @@ import { useDialog } from '../components/Dialog'
  * The third is the one that would otherwise be invisible. A credit that has
  * been allocated looks exactly like a credit that has not, unless the screen
  * says so.
+ *
+ * **It prints** as a credit note, and the printed one carries the same three
+ * things — including, per line, whether the goods went back on the shelf. A
+ * written-off line credits the customer exactly the same amount, so a voucher
+ * that did not distinguish them would be the same document for two different
+ * events.
  */
 
 interface Row {
@@ -66,6 +74,9 @@ export default function ReturnView() {
   const { id } = useParams()
   const nav = useNavigate()
   const { can } = useSession()
+
+  // A5 portrait, no page margin. See lib/printpage.ts.
+  useBillPage()
   const state = useLocation().state as
     | { justSaved?: string; allocNote?: string | null }
     | null
@@ -154,10 +165,11 @@ export default function ReturnView() {
     <>
       {dialog}
 
-      <div className="page-head">
+      <div className="page-head no-print">
         <h1>Return {row.doc_no}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => nav('/returns')}>All returns</button>
+          <button className="primary" onClick={() => window.print()}>Print</button>
           {mayEdit && !cancelled && (
             <button onClick={() => nav(`/returns/new?party=${row.party_id}`)}>
               New return
@@ -172,6 +184,8 @@ export default function ReturnView() {
       </div>
 
       <ErrorBanner error={error} />
+
+      <div className="no-print">
 
       {state?.justSaved && !state.allocNote && (
         <Banner tone="info">
@@ -333,6 +347,50 @@ export default function ReturnView() {
             they owe in total.
           </p>
         )}
+      </div>
+      </div>
+
+      <div className="print-only">
+        <VoucherSheet
+          kind="Credit Note"
+          docNo={row.doc_no}
+          docDate={row.return_date}
+          cancelled={cancelled}
+          meta={row.invoice_no ? <div>Against bill {row.invoice_no}</div> : undefined}
+          partyLabel="Returned by"
+          partyName={row.party_name}
+          partyLines={[row.party_code, row.route_name]}
+          columns={[
+            { header: '#' },
+            { header: 'Item' },
+            { header: 'Qty', align: 'right' },
+            { header: 'Rate', align: 'right' },
+            { header: 'Back on shelf' },
+            { header: 'Credit', align: 'right' },
+          ]}
+          lines={lines.map((l) => ({
+            key: l.id,
+            cells: [
+              l.line_no,
+              l.product?.name ?? '',
+              <>{fmtQty(l.qty)} {l.product?.base_uom}</>,
+              fmtMoney(l.rate),
+              l.restock ? 'Yes' : 'Written off',
+              fmtMoney(l.amount),
+            ],
+          }))}
+          totals={[
+            ...(Number(row.allocated) > 0
+              ? [{ label: `Put against ${row.invoice_no ?? 'a bill'}`, value: row.allocated }]
+              : []),
+            ...(Number(row.unallocated) > 0
+              ? [{ label: 'Left as credit', value: row.unallocated }]
+              : []),
+            { label: 'Total credit', value: row.total_value, grand: true },
+          ]}
+          remarks={[row.reason, row.remarks].filter(Boolean).join(' · ') || null}
+          foot="Credit allowed as above. Goods written off are not returned to stock."
+        />
       </div>
     </>
   )

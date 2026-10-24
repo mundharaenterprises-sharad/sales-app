@@ -4,14 +4,29 @@ import { supabase, asDbError, friendlyMessage } from '../lib/supabase'
 import { fmtDate, fmtMoney, fmtQty } from '../lib/format'
 import { Banner, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { useSession } from '../lib/session'
+import { useBillPage } from '../lib/printpage'
+import { VoucherSheet } from '../components/VoucherSheet'
+import { DateInput } from '../components/DateInput'
 
 /**
- * One purchase, and the way back out of it.
+ * One purchase, what it cost, and the two ways to correct it.
  *
  * Cancelling takes the goods out again on today's date rather than editing
  * anything, so the stock ledger still reads as a history of what happened. If
  * the goods have since been sold the database refuses, and says which product
  * is short — there is no honest way to un-buy something already gone.
+ *
+ * **Correcting** (044) is that cancellation and a fresh entry in one step,
+ * with the old one kept and linked. It inherits the same refusal, which is
+ * what decides how long a purchase can be corrected: not a clock, but whether
+ * the goods are still on the shelf. Changing a rate moves the average cost
+ * from that date onward and so the margins already reported — correct, if the
+ * rate was keyed wrong, and said on the screen before it happens.
+ *
+ * **The details** — the supplier's own bill number, its date, the remarks —
+ * move no stock and no money, so they can be fixed at any time, including long
+ * after the goods have gone and correcting is no longer possible. That is the
+ * whole reason there are two ways rather than one.
  */
 
 interface Head {
@@ -33,6 +48,9 @@ interface Head {
   cancel_reason: string | null
   remarks: string | null
   created_by_name: string | null
+  replaces_doc_no: string | null
+  replaced_by_id: string | null
+  replaced_by_doc_no: string | null
 }
 
 interface LineRow {
@@ -57,10 +75,21 @@ export default function PurchaseView() {
   const { can } = useSession()
   const justCreated = (useLocation().state as { justCreated?: string } | null)?.justCreated
 
+  // A5 portrait, no page margin, border on the sheet. See lib/printpage.ts.
+  useBillPage()
+
   const [head, setHead] = useState<Head | null>(null)
   const [lines, setLines] = useState<LineRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Editing the details is a separate, smaller job from correcting the
+  // purchase, so it is a separate, smaller form that opens in place.
+  const [editing, setEditing] = useState(false)
+  const [billNo, setBillNo] = useState('')
+  const [billDate, setBillDate] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [savedNote, setSavedNote] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -76,7 +105,11 @@ export default function PurchaseView() {
       setError(friendlyMessage(h.error))
       return
     }
-    setHead(h.data as Head)
+    const row = h.data as Head
+    setHead(row)
+    setBillNo(row.supplier_bill_no ?? '')
+    setBillDate(row.supplier_bill_date ?? '')
+    setRemarks(row.remarks ?? '')
     if (!l.error) setLines((l.data ?? []) as unknown as LineRow[])
   }, [id])
 
@@ -133,15 +166,53 @@ export default function PurchaseView() {
     await load()
   }, [id, load])
 
+  /** The supplier's bill number, its date, the remarks. Nothing that moves. */
+  const saveDetails = useCallback(async () => {
+    setError(null)
+    setBusy(true)
+    const { error } = await supabase.rpc('update_purchase_details', {
+      p_purchase_id: id,
+      // An empty box clears the field; null would leave it alone. The database
+      // uses the same convention, so the two cannot disagree about what an
+      // emptied box means.
+      p_supplier_bill_no: billNo.trim(),
+      p_supplier_bill_date: billDate || null,
+      p_remarks: remarks.trim(),
+    })
+    setBusy(false)
+    if (error) {
+      setError(friendlyMessage(error))
+      return
+    }
+    setEditing(false)
+    setSavedNote('Details saved.')
+    await load()
+  }, [id, billNo, billDate, remarks, load])
+
+  const mayEdit = can('ACCOUNTS', 'ADMIN') && head?.status === 'ACTIVE'
+
   if (!head && !error) return <Loading what="Loading purchase" />
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head no-print">
         <h1>Purchase {head?.doc_no}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/purchases')}>All purchases</button>
-          {can('ACCOUNTS', 'ADMIN') && head?.status === 'ACTIVE' && (
+          <button className="primary" onClick={() => window.print()} disabled={!head}>
+            Print
+          </button>
+          {mayEdit && (
+            <button onClick={() => { setEditing((v) => !v); setSavedNote(null) }}>
+              {editing ? 'Stop editing' : 'Edit details'}
+            </button>
+          )}
+          {mayEdit && (
+            <button onClick={() => nav(`/purchases/new?revise=${head!.purchase_id}`)}>
+              Correct purchase
+            </button>
+          )}
+          {mayEdit && (
             <button onClick={() => void cancel()} disabled={busy}>
               {busy ? <Spinner /> : 'Cancel purchase'}
             </button>
@@ -157,15 +228,77 @@ export default function PurchaseView() {
         </Banner>
       )}
 
+      {savedNote && <Banner tone="info">{savedNote}</Banner>}
+
       {head?.status === 'CANCELLED' && (
         <Banner tone="bad">
           This purchase is cancelled and the goods went back out of stock.
           {head.cancel_reason ? ` Reason: ${head.cancel_reason}` : ''}
+          {head.replaced_by_doc_no && (
+            <>
+              {' '}It was corrected and re-entered as{' '}
+              <Link to={`/purchases/${head.replaced_by_id}`}>
+                {head.replaced_by_doc_no}
+              </Link>.
+            </>
+          )}
         </Banner>
       )}
 
+      {head?.status === 'ACTIVE' && head.replaces_doc_no && (
+        <Banner tone="info">
+          This corrects <strong>{head.replaces_doc_no}</strong>, which was
+          cancelled when this one was entered.
+        </Banner>
+      )}
+
+      {editing && head && (
+        <div className="card card-pad no-print">
+          <h3 style={{ marginTop: 0 }}>Details</h3>
+          <p className="hint" style={{ marginTop: 0 }}>
+            The supplier&rsquo;s own bill number, its date and the remarks. None
+            of these move stock or money, so they can be fixed at any time —
+            including after the goods have gone out, when correcting the
+            purchase is no longer possible.
+          </p>
+          <div className="form-row">
+            <label className="inline-field">
+              <span>Their bill no.</span>
+              <input
+                type="text"
+                value={billNo}
+                placeholder="optional"
+                onChange={(e) => setBillNo(e.target.value)}
+                style={{ width: 160 }}
+              />
+            </label>
+            <label className="inline-field">
+              <span>Their bill date</span>
+              <DateInput value={billDate} onChange={setBillDate} />
+            </label>
+            <label className="inline-field grow">
+              <span>Remarks</span>
+              <input
+                type="text"
+                value={remarks}
+                placeholder="optional"
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="primary" onClick={() => void saveDetails()} disabled={busy}>
+              {busy ? <Spinner /> : 'Save details'}
+            </button>
+            <button onClick={() => { setEditing(false); void load() }} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {head && (
-        <div className="card card-pad">
+        <div className="card card-pad no-print">
           <div className="tiles">
             <div className="tile">
               <h3>Supplier</h3>
@@ -201,7 +334,7 @@ export default function PurchaseView() {
         </div>
       )}
 
-      <div className="card table-wrap" style={{ marginTop: 12 }}>
+      <div className="card table-wrap no-print" style={{ marginTop: 12 }}>
         <table className="data">
           <thead>
             <tr>
@@ -278,10 +411,80 @@ export default function PurchaseView() {
         </table>
       </div>
 
-      <p className="sub" style={{ marginTop: 12 }}>
+      <p className="sub no-print" style={{ marginTop: 12 }}>
         <Link to="/purchases">Back to purchases</Link>
         {head?.created_by_name ? ` · entered by ${head.created_by_name}` : ''}
       </p>
+
+      {/*
+        The document, as it prints. The screen above is for reading — it shows
+        the discount worked out per line, which is useful on a monitor and
+        noise on a filed voucher. This is what goes in the file.
+      */}
+      {head && (
+        <div className="print-only">
+          <VoucherSheet
+            kind="Purchase Voucher"
+            docNo={head.doc_no}
+            docDate={head.purchase_date}
+            cancelled={head.status === 'CANCELLED'}
+            meta={
+              <>
+                {head.supplier_bill_no && <div>Their bill {head.supplier_bill_no}</div>}
+                {head.supplier_bill_date && <div>{fmtDate(head.supplier_bill_date)}</div>}
+                {head.replaces_doc_no && <div>Corrects {head.replaces_doc_no}</div>}
+              </>
+            }
+            partyLabel="Received from"
+            partyName={head.supplier_name}
+            partyLines={[head.supplier_code, head.master_name]}
+            columns={[
+              { header: '#' },
+              { header: 'Item' },
+              { header: 'Qty', align: 'right' },
+              { header: 'Rate', align: 'right' },
+              { header: 'Value', align: 'right' },
+              { header: 'Disc', align: 'right' },
+              { header: 'Cost', align: 'right' },
+            ]}
+            lines={lines.map((l) => ({
+              key: l.id,
+              cells: [
+                l.line_no,
+                l.product?.name ?? '',
+                <>
+                  {fmtQty(l.qty)}{' '}
+                  {l.uom === 'PACK' ? (l.product?.pack_uom ?? 'PACK') : l.product?.base_uom}
+                </>,
+                fmtMoney(l.rate),
+                fmtMoney(l.amount),
+                Number(l.line_discount_amount) + Number(l.allocated_bill_discount) > 0
+                  ? fmtMoney(
+                      Number(l.line_discount_amount) + Number(l.allocated_bill_discount),
+                    )
+                  : '—',
+                fmtMoney(l.net_amount),
+              ],
+            }))}
+            totals={[
+              { label: 'Goods', value: head.gross_total },
+              ...(Number(head.line_discount_total) > 0
+                ? [{ label: 'Item discounts', value: head.line_discount_total, minus: true }]
+                : []),
+              ...(Number(head.bill_discount_amount) > 0
+                ? [{ label: 'Bill discount', value: head.bill_discount_amount, minus: true }]
+                : []),
+              ...(Number(head.other_charges) > 0
+                ? [{ label: 'Other charges', value: head.other_charges }]
+                : []),
+              { label: 'Payable to supplier', value: head.net_total, grand: true },
+            ]}
+            remarks={head.remarks}
+            foot="Goods received in good order unless noted above."
+            signature="Received by"
+          />
+        </div>
+      )}
     </>
   )
 }

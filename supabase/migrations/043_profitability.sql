@@ -100,6 +100,25 @@ comment on function app.require_admin() is
 -- `created_at` then `id` settles it, and `id` is there only to break a tie
 -- between two rows written in the same instant.
 
+-- A CANCELLED DOCUMENT IS LEFT OUT ENTIRELY, both the movement and the
+-- movement that reversed it. They net to zero in quantity, so dropping the
+-- pair changes nothing about what is on the shelf — but it matters a great
+-- deal to cost, and it is not optional.
+--
+-- A cancellation is dated the day it is made, while the document it cancels
+-- keeps its own date. Correct a purchase from last Tuesday (044) and the
+-- ledger reads: Tuesday's purchase, Tuesday's replacement, then today's
+-- cancellation. In date order the wrong purchase is still sitting in front of
+-- the right one, so the average comes out halfway between the rate that was
+-- keyed and the rate that was meant — and the cancellation never fully
+-- undoes it, because by then it is taken out at the blended cost rather than
+-- at the cost it went in at.
+--
+-- A purchase cannot be cancelled once its goods have gone out, so nothing was
+-- ever sold out of one, and leaving it out of the costing loses nothing real.
+-- The same reasoning covers a cancelled bill and a cancelled return. This was
+-- found by a test, after 044 made it easy to produce.
+
 create or replace view app.v_ledger_marked as
 select
   sl.id,
@@ -117,7 +136,22 @@ select
     over (partition by sl.product_id
           order by sl.movement_date, sl.created_at, sl.id
           rows between unbounded preceding and current row) as event_no
-from public.stock_ledger sl;
+from public.stock_ledger sl
+where
+  -- A purchase and its cancellation both carry the purchase's id.
+  not (sl.doc_type in ('PURCHASE', 'PURCHASE_CANCEL')
+       and exists (select 1 from public.purchase p
+                    where p.id = sl.doc_id and p.status = 'CANCELLED'))
+  -- A sale's cancellation carries the cancellation document's id, not the
+  -- bill's, so both are tied back through the bill LINE instead.
+  and not (sl.doc_type in ('SALE', 'SALE_CANCEL')
+           and exists (select 1 from public.sales_invoice_line sil
+                         join public.sales_invoice si on si.id = sil.invoice_id
+                        where sil.id = sl.doc_line_id
+                          and si.status = 'CANCELLED'))
+  and not (sl.doc_type in ('SALE_RETURN', 'SALE_RETURN_CANCEL')
+           and exists (select 1 from public.sales_return sr
+                        where sr.id = sl.doc_id and sr.status = 'CANCELLED'));
 
 
 -- -----------------------------------------------------------------------------

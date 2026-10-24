@@ -6,6 +6,8 @@ import { Banner, Empty, ErrorBanner, Loading, Spinner } from '../components/ui'
 import { num } from '../components/FormSheet'
 import { useSession } from '../lib/session'
 import { AgePill } from '../components/AgePill'
+import { useBillPage } from '../lib/printpage'
+import { VoucherSheet } from '../components/VoucherSheet'
 
 /**
  * One payment, and which bills it pays.
@@ -14,6 +16,12 @@ import { AgePill } from '../components/AgePill'
  * and money lands on a bill only because somebody typed it there. What is sent
  * is the complete picture for this payment, so clearing a box takes that
  * settlement back off the bill.
+ *
+ * **It prints**, as a receipt the shop can keep. That is the one voucher here
+ * that leaves the premises, so it lists the bills the money went against —
+ * which is what somebody asks about a week later — and anything not yet
+ * applied is shown as on account rather than quietly omitted. No firm name on
+ * it, the same as a bill, which he confirmed.
  */
 
 interface Receipt {
@@ -57,6 +65,16 @@ export default function ReceiptView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  // A5 portrait, no page margin. See lib/printpage.ts.
+  useBillPage()
+
+  /** Of this payment, what is still sitting on account rather than on a bill. */
+  const onAccount = useMemo(() => {
+    if (!receipt) return 0
+    const used = Object.values(applied).reduce((a, b) => a + Number(b || 0), 0)
+    return Math.max(Math.round((Number(receipt.amount) - used) * 100) / 100, 0)
+  }, [receipt, applied])
 
   const load = useCallback(async () => {
     setError(null)
@@ -209,10 +227,13 @@ export default function ReceiptView() {
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head no-print">
         <h1>Payment {receipt?.doc_no}</h1>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => nav('/receipts')}>All payments</button>
+          <button className="primary" onClick={() => window.print()} disabled={!receipt}>
+            Print
+          </button>
           {/*
             A day of collections is one payment after another, so the next one
             starts here rather than back at the list. The date goes with it:
@@ -233,6 +254,8 @@ export default function ReceiptView() {
       </div>
 
       <ErrorBanner error={error} />
+
+      <div className="no-print">
 
       {justSaved && (
         <Banner tone="info">
@@ -414,6 +437,59 @@ export default function ReceiptView() {
             </>
           )}
         </>
+      )}
+      </div>
+
+      {/*
+        The receipt the shop keeps. It lists what the money was put against,
+        because "which bill did that payment pay" is the question it gets asked
+        a week later, and shows anything still unapplied as on account rather
+        than leaving it off and not adding up.
+      */}
+      {receipt && (
+        <div className="print-only">
+          <VoucherSheet
+            kind="Receipt"
+            docNo={receipt.doc_no}
+            docDate={receipt.receipt_date}
+            cancelled={receipt.status !== 'ACTIVE'}
+            meta={
+              receipt.collector
+                ? <div>Collected by {receipt.collector.full_name}</div>
+                : undefined
+            }
+            partyLabel="Received from"
+            partyName={receipt.party?.name ?? ''}
+            partyLines={[receipt.party?.code, receipt.party?.route?.name]}
+            columns={[
+              { header: 'Bill' },
+              { header: 'Dated' },
+              { header: 'Applied', align: 'right' },
+            ]}
+            lines={(bills ?? [])
+              .filter((b) => Number(applied[b.invoice_id] ?? 0) > 0)
+              .map((b) => ({
+                key: b.invoice_id,
+                cells: [
+                  b.doc_no,
+                  fmtDate(b.invoice_date),
+                  fmtMoney(applied[b.invoice_id] ?? 0),
+                ],
+              }))}
+            emptyLines="Received on account, not yet applied to any bill."
+            totals={[
+              ...(onAccount > 0.001
+                ? [
+                    { label: 'Applied to bills', value: Number(receipt.amount) - onAccount },
+                    { label: 'On account', value: onAccount },
+                  ]
+                : []),
+              { label: 'Received', value: Number(receipt.amount), grand: true },
+            ]}
+            remarks={receipt.remarks}
+            foot="Subject to realisation of the instrument, where applicable."
+          />
+        </div>
       )}
     </>
   )
