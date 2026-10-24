@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase, friendlyMessage } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/format'
 import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { Check } from '../../components/FormSheet'
 import { useUrlState, useUrlFlag } from '../../lib/urlstate'
+import { fetchAll } from '../../lib/fetchall'
 
 /**
  * Money collected, and by whom.
@@ -43,9 +44,13 @@ export default function Collections() {
   const load = useCallback(async () => {
     setError(null)
     setRows(null)
+    // Paged: one row per receipt, and "All" is every receipt since go-live.
+    // One request stops at a cap and says nothing, which would quietly shrink
+    // the day's collections. See lib/fetchall.ts.
+    const { data, error } = await fetchAll<Row>(() => {
     let q = supabase
       .from('v_collection_report')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('status', 'ACTIVE')
       // Newest first, and the second key is what makes that true. A date alone
       // leaves same-day documents in whatever order the database happens to
@@ -56,13 +61,14 @@ export default function Collections() {
       .order('doc_no', { ascending: false })
     if (from) q = q.gte('receipt_date', from)
     if (to) q = q.lte('receipt_date', to)
-    const { data, error } = await q
+      return q
+    })
     if (error) {
-      setError(friendlyMessage(error))
+      setError(error)
       setRows([])
       return
     }
-    setRows((data ?? []) as Row[])
+    setRows(data)
   }, [from, to])
 
   useEffect(() => {

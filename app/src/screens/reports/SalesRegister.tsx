@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase, friendlyMessage } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/format'
 import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { useMasterGroups, MasterFilter } from '../../lib/masters'
 import { useUrlState } from '../../lib/urlstate'
+import { fetchAll } from '../../lib/fetchall'
 import type { Sheet } from '../../lib/xlsx'
 
 interface Row {
@@ -67,6 +68,8 @@ export default function SalesRegister() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [lines, setLines] = useState<LineRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Only the two extra sheets depend on these, so it is reported separately. */
+  const [lineError, setLineError] = useState<string | null>(null)
   // In the address, so opening a bill and coming back lands on the same
   // filtered report rather than on an unfiltered one. See lib/urlstate.ts.
   const [route, setRoute] = useUrlState('route', '')
@@ -76,6 +79,25 @@ export default function SalesRegister() {
   const [billTo, setBillTo] = useUrlState('billto', '')
   const { masters } = useMasterGroups()
 
+  /**
+   * A bill number as a number.
+   *
+   * Bills read INV-000123, and nobody types that: they type 123, or 000123,
+   * or paste the whole thing off a bill in front of them. All three have to
+   * mean the same bill, so only the digits are compared.
+   *
+   * Anything with no digits in it at all is not a bill number and is ignored,
+   * rather than filtering the report down to nothing while somebody is still
+   * typing.
+   */
+  const billNo = (s: string): number | null => {
+    const digits = (s.match(/\d+/g) ?? []).join('')
+    return digits === '' ? null : Number(digits)
+  }
+  const lo = billNo(billFrom)
+  const hi = billNo(billTo)
+  const byNumber = lo !== null || hi !== null
+
   const load = useCallback(async () => {
     setError(null)
     setRows(null)
@@ -83,31 +105,80 @@ export default function SalesRegister() {
     // a book is. The second key is still needed — without it a day's bills
     // come back in no order at all, which makes two printings of the same
     // register disagree.
-    let q = supabase
-      .from('v_sales_register')
-      .select('*')
-      .order('invoice_date')
-      .order('doc_no')
-    if (from) q = q.gte('invoice_date', from)
-    if (to) q = q.lte('invoice_date', to)
-    // The lines are fetched with the same window as the bills, and filtered
-    // afterwards by the same predicate, so the two sheets in the download can
-    // never be describing different sets of bills.
-    let ql = supabase.from('v_sales_register_lines').select('*')
-    if (from) ql = ql.gte('invoice_date', from)
-    if (to) ql = ql.lte('invoice_date', to)
+    /**
+     * A bill number beats the dates.
+     *
+     * This used to be a filter applied in the browser on top of whatever the
+     * date range had fetched — and the date range starts at this month. Typing
+     * a bill number is an unambiguous request for a particular bill, so it is
+     * answered as one: filtered on the server by `doc_seq` (045), with the
+     * dates left out of it entirely. The screen says so, because a date range
+     * sitting in the filter bar doing nothing is its own kind of lie.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const narrow = <Q extends { gte: (c: string, v: unknown) => Q; lte: (c: string, v: unknown) => Q }>(q: Q): Q => {
+      if (byNumber) {
+        if (lo !== null) q = q.gte('doc_seq', lo)
+        if (hi !== null) q = q.lte('doc_seq', hi)
+      } else {
+        if (from) q = q.gte('invoice_date', from)
+        if (to) q = q.lte('invoice_date', to)
+      }
+      return q
+    }
 
-    const [{ data, error }, lineRes] = await Promise.all([q, ql])
-    if (error) {
-      setError(friendlyMessage(error))
+    /**
+     * Both queries are built as functions and paged.
+     *
+     * One request returns at most a page of rows, and PostgREST does not say
+     * so — it returns the cap and no error. The bills fitted under it; the
+     * LINES, several per bill, did not, so the Products and By salesman
+     * sheets were built from whatever slice came back and the tabs came out
+     * missing or short with nothing to indicate it. See lib/fetchall.ts.
+     *
+     * The ordering on the lines is not cosmetic: a paged query without one
+     * can return the same row twice and miss another.
+     */
+    const bills = () => {
+      let q = supabase
+        .from('v_sales_register')
+        .select('*', { count: 'exact' })
+        .order('invoice_date')
+        .order('doc_no')
+      return narrow(q)
+    }
+    const lineRows = () => {
+      let q = supabase
+        .from('v_sales_register_lines')
+        .select('*', { count: 'exact' })
+        .order('invoice_date')
+        .order('doc_no')
+        .order('line_id')
+      return narrow(q)
+    }
+
+    const [billRes, lineRes] = await Promise.all([
+      fetchAll<Row>(bills),
+      fetchAll<LineRow>(lineRows),
+    ])
+    if (billRes.error) {
+      setError(billRes.error)
       setRows([])
       return
     }
-    setRows((data ?? []) as Row[])
-    // A failure here costs the second sheet, not the report. The button says
-    // so rather than the screen refusing to load.
-    setLines(lineRes.error ? [] : ((lineRes.data ?? []) as LineRow[]))
-  }, [from, to])
+    setRows(billRes.data)
+    // The lines only feed the two extra sheets, so a failure here is not worth
+    // refusing the report over — but it was being swallowed in silence, which
+    // meant a download could quietly come out with sheets missing and nothing
+    // anywhere saying why. Now it says.
+    if (lineRes.error) {
+      setLines([])
+      setLineError(lineRes.error)
+    } else {
+      setLines(lineRes.data)
+      setLineError(null)
+    }
+  }, [from, to, byNumber, lo, hi])
 
   useEffect(() => {
     void load()
@@ -124,24 +195,12 @@ export default function SalesRegister() {
   const repOf = (r: Row) => r.rep_name ?? COUNTER
 
   /**
-   * A bill number as a number.
+   * Still applied after the fetch as well as before it.
    *
-   * Bills read INV-000123, and nobody types that: they type 123, or 000123,
-   * or paste the whole thing off a bill in front of them. All three have to
-   * mean the same bill, so only the digits are compared — and comparing them
-   * as numbers rather than as text is what makes 99 to 101 return three bills
-   * instead of none.
-   *
-   * Anything with no digits in it at all is not a bill number and is ignored,
-   * rather than filtering the report down to nothing while somebody is still
-   * typing.
+   * The server has already narrowed to the range, so this is belt and braces
+   * rather than the filter itself — and it is what keeps the two sheets of the
+   * download agreeing with the screen if the query above is ever changed.
    */
-  const billNo = (s: string): number | null => {
-    const digits = (s.match(/\d+/g) ?? []).join('')
-    return digits === '' ? null : Number(digits)
-  }
-  const lo = billNo(billFrom)
-  const hi = billNo(billTo)
   const inRange = (doc_no: string) => {
     if (lo === null && hi === null) return true
     const n = billNo(doc_no)
@@ -368,20 +427,38 @@ export default function SalesRegister() {
     <Report<Row>
       title="Sales register"
       subtitle={
-        lo !== null || hi !== null
-          ? `${fmtDate(from)} to ${fmtDate(to)} · bills ${lo ?? 'first'} to ${hi ?? 'last'}`
+        // When a bill range is given the dates are not being used, so they are
+        // not quoted as though they were.
+        byNumber
+          ? `Bills ${lo ?? 'first'} to ${hi ?? 'last'} — any date`
           : `${fmtDate(from)} to ${fmtDate(to)}`
       }
       extraSheets={productSheet}
       footer={
-        lines && lines.length > 0 ? (
+        lineError ? (
+          <>
+            The <strong>Products</strong> and <strong>By salesman</strong> sheets
+            are missing from the download: {lineError}
+          </>
+        ) : lines && lines.length > 0 ? (
           <>the Excel download has two more sheets: <strong>Products</strong>, and
           <strong> By salesman</strong> — each product in cartons and loose</>
+        ) : shown && shown.length > 0 ? (
+          <>
+            The <strong>Products</strong> and <strong>By salesman</strong> sheets
+            are left out: every line on these bills has been cancelled, so there
+            is nothing to break down by product.
+          </>
         ) : undefined
       }
       filters={
         <>
           <DateRange from={from} to={to} setFrom={setFrom} setTo={setTo} presets={presets} />
+          {byNumber && (
+            <span className="pill warn">
+              Dates ignored — showing by bill number
+            </span>
+          )}
           <select value={route} onChange={(e) => setRoute(e.target.value)} aria-label="Filter by route">
             <option value="">All routes</option>
             {routes.map((r) => (

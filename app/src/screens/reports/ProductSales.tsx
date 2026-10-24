@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { supabase, friendlyMessage } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/format'
 import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
 import { useUrlState } from '../../lib/urlstate'
+import { fetchAll } from '../../lib/fetchall'
 
 /**
  * What sold, in quantity and value.
@@ -54,16 +55,27 @@ export default function ProductSales() {
   const load = useCallback(async () => {
     setError(null)
     setRaw(null)
-    let q = supabase.from('v_product_sales').select('*')
-    if (from) q = q.gte('invoice_date', from)
-    if (to) q = q.lte('invoice_date', to)
-    const { data, error } = await q
+    // One row per product per DAY, so a month of trading is thousands of rows
+    // — comfortably past what one request returns. Paged, because a truncated
+    // answer here is not an empty report, it is a smaller sales figure that
+    // looks exactly like a correct one. The ordering is what makes paging
+    // meaningful at all. See lib/fetchall.ts.
+    const { data, error } = await fetchAll<Raw>(() => {
+      let q = supabase
+        .from('v_product_sales')
+        .select('*', { count: 'exact' })
+        .order('invoice_date')
+        .order('product_code')
+      if (from) q = q.gte('invoice_date', from)
+      if (to) q = q.lte('invoice_date', to)
+      return q
+    })
     if (error) {
-      setError(friendlyMessage(error))
+      setError(error)
       setRaw([])
       return
     }
-    setRaw((data ?? []) as Raw[])
+    setRaw(data)
   }, [from, to])
 
   useEffect(() => {

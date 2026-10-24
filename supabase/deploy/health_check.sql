@@ -131,6 +131,15 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('045', 'the register can be filtered by bill number',
+                                 exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'v_sales_register'
+                                            and column_name = 'doc_seq')
+                             and exists (select 1 from information_schema.columns
+                                          where table_schema = 'public'
+                                            and table_name = 'v_sales_register_lines'
+                                            and column_name = 'doc_seq')),
   ('044', 'a purchase can be corrected',
                                  to_regprocedure('public.revise_purchase(uuid,jsonb,date,numeric,text,date,text,numeric,numeric,uuid)') is not null
                              and to_regprocedure('public.update_purchase_details(uuid,text,date,text)') is not null

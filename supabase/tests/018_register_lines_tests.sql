@@ -228,4 +228,82 @@ begin
   perform pg_temp.pass('a product with no pack reports none');
 end $$;
 
-\echo '  6 of 6 passed.'
+-- =============================================================================
+-- 7. The bill number as a number (migration 045)
+-- =============================================================================
+-- The register's bill-number filter used to run in the browser on top of a
+-- date range that starts at "this month", so asking for bills 126 to 131 in
+-- October found nothing and the download came out with its extra sheets
+-- missing. `doc_seq` is what lets the server answer the question instead.
+
+do $$
+declare r record; n int;
+begin
+  select doc_no, doc_seq into r from public.v_sales_register
+   order by doc_seq limit 1;
+
+  perform pg_temp.eq(
+    r.doc_seq,
+    nullif(regexp_replace(r.doc_no, '\D', '', 'g'), '')::bigint,
+    'the bill number as a number');
+  perform pg_temp.pass('doc_seq is the digits of the bill number');
+
+  -- Both views have to agree, or the two sheets of one download would be
+  -- filtered on different things.
+  select count(*) into n
+    from public.v_sales_register_lines l
+    join public.v_sales_register b on b.invoice_id = l.invoice_id
+   where l.doc_seq is distinct from b.doc_seq;
+  perform pg_temp.eq(n, 0, 'lines whose number disagrees with their bill');
+  perform pg_temp.pass('and the line view says the same number as the bill view');
+end $$;
+
+-- A range filtered the way the report now filters it.
+do $$
+declare v_lo bigint; v_hi bigint; n int; m int;
+begin
+  select min(doc_seq), max(doc_seq) into v_lo, v_hi from public.v_sales_register;
+
+  select count(*) into n from public.v_sales_register
+   where doc_seq >= v_lo and doc_seq <= v_hi;
+  perform pg_temp.eq(n, (select count(*)::int from public.v_sales_register),
+    'bills in the full range');
+
+  -- The range is on the NUMBER, so a range that would be empty compared as
+  -- text still finds its bills. This is the 99-to-101 case.
+  select count(*) into m from public.v_sales_register where doc_seq > v_hi;
+  perform pg_temp.eq(m, 0, 'bills past the last one');
+  perform pg_temp.pass('a numeric range picks up every bill in it');
+end $$;
+
+-- =============================================================================
+-- 8. Rebuilding the two views did not lose anything (bug #23)
+-- =============================================================================
+-- 045 rewrites both of them in full. v_sales_register was last defined in 036,
+-- which took opening balances out of the register, and v_sales_register_lines
+-- in 034. Rebuilding either from the migration that first created it would
+-- silently undo that, which is a mistake this project has made twice.
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.v_sales_register where doc_no like 'OPN-%';
+  perform pg_temp.eq(n, 0, 'opening documents in the register');
+  perform pg_temp.pass('036 survived the rebuild — no opening balances');
+
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public'
+                    and table_name = 'v_sales_register'
+                    and column_name = 'rep_name') then
+    raise exception 'FAIL  the register lost rep_name in the rebuild';
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public'
+                    and table_name = 'v_sales_register_lines'
+                    and column_name = 'billed_pack_size') then
+    raise exception 'FAIL  the line view lost billed_pack_size in the rebuild';
+  end if;
+  perform pg_temp.pass('and both views kept every column they had');
+end $$;
+
+\echo '  11 of 11 passed.'
