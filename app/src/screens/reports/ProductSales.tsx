@@ -4,16 +4,20 @@ import { fmtDate } from '../../lib/format'
 import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
 import { DateRange, useDateRange } from '../../components/DateRange'
-import { useSession } from '../../lib/session'
 import { useUrlState } from '../../lib/urlstate'
 
 /**
  * What sold, in quantity and value.
  *
- * The margin is indicative only: it values everything at the product's CURRENT
- * cost, because the schema does not capture what each sale actually cost. It
- * drifts whenever buying prices move, and the screen says so rather than
- * letting anyone treat it as exact.
+ * This used to carry an "indicative margin", which valued every sale at the
+ * product's CURRENT cost — so raising a buying price rewrote last quarter's
+ * margin, and two people running the report a month apart got different
+ * answers. **Migration 043 removed it**, both from this screen and from the
+ * view, and the real figure now lives on the Profitability report, where cost
+ * is the average of what was actually paid and the whole thing is Admin only.
+ *
+ * Two reports disagreeing about margin would be worse than one report not
+ * having it, which is why this one does not have it.
  */
 
 interface Raw {
@@ -26,8 +30,6 @@ interface Raw {
   invoice_date: string
   qty_sold_base: number
   net_sales: number
-  est_cost: number
-  est_margin: number
 }
 
 interface Row {
@@ -38,13 +40,10 @@ interface Row {
   base_uom: string
   qty: number
   sales: number
-  margin: number
 }
 
 export default function ProductSales() {
   const { from, to, setFrom, setTo, presets } = useDateRange('month')
-  const { can } = useSession()
-  const seesCost = can('ACCOUNTS', 'ADMIN')
 
   const [raw, setRaw] = useState<Raw[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -92,11 +91,9 @@ export default function ProductSales() {
           base_uom: r.base_uom,
           qty: 0,
           sales: 0,
-          margin: 0,
         }
       e.qty += Number(r.qty_sold_base || 0)
       e.sales += Number(r.net_sales || 0)
-      e.margin += Number(r.est_margin || 0)
       m.set(r.product_id, e)
     }
     return [...m.values()].sort((a, b) => b.sales - a.sales)
@@ -115,20 +112,19 @@ export default function ProductSales() {
       cell: (r) => <>{r.qty.toLocaleString('en-IN')} {r.base_uom}</>,
     },
     { header: 'Sales', value: (r) => r.sales, type: 'money', align: 'right' },
-    ...(seesCost
-      ? ([
-          { header: 'Margin (indicative)', value: (r) => r.margin, type: 'money', align: 'right', width: 20 },
-        ] as ReportColumn<Row>[])
-      : []),
   ]
 
+  // One entry per column, in order — Product, Code, Master group, Group,
+  // Quantity, Sales. It was one short before, which put the quantity under
+  // "Group" and the sales under "Quantity". Bug #17 again, found while taking
+  // the margin column out.
   const totals = [
     'Total',
     null,
     null,
+    null,
     (rows ?? []).reduce((s, r) => s + r.qty, 0),
     (rows ?? []).reduce((s, r) => s + r.sales, 0),
-    ...(seesCost ? [(rows ?? []).reduce((s, r) => s + r.margin, 0)] : []),
   ]
 
   return (
@@ -152,7 +148,7 @@ export default function ProductSales() {
       fileName="product-sales"
       empty="Nothing sold in this period."
       totals={totals}
-      footer={seesCost ? 'Margin uses each product’s current cost, so treat it as indicative.' : undefined}
+      footer="Margin is on the Profitability report, which is Admin only."
     />
   )
 }

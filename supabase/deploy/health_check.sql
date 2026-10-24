@@ -131,6 +131,16 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('043', 'profitability, admin only',
+                                 to_regprocedure('public.profit_lines(date,date)') is not null
+                             and to_regprocedure('app.require_admin()') is not null
+                             and to_regclass('app.v_ledger_cost') is not null
+                             -- The indicative margin is gone from Product
+                             -- sales, so cost is nowhere a non-admin can read.
+                             and not exists (select 1 from information_schema.columns
+                                              where table_schema = 'public'
+                                                and table_name = 'v_product_sales'
+                                                and column_name = 'est_margin')),
   ('042', 'nothing can be dated in the future',
                                  to_regprocedure('app.tg_no_future_date()') is not null
                              and (select count(*) from pg_trigger

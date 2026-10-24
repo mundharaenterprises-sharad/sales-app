@@ -1,12 +1,19 @@
 import { Link } from 'react-router-dom'
 import { useSession } from '../lib/session'
 
+/** Admin-only entries are marked; cost is not for Accounts or reps. */
 const REPORTS = [
   { to: '/reports/ageing', title: 'Outstanding & ageing', what: 'Who owes what, in 0–15, 16–30, 31–45 and 46+ day buckets. By party or by route.' },
   { to: '/reports/sales', title: 'Sales register', what: 'Every bill in a period, with discounts, cancellations and what was actually billed.' },
   { to: '/reports/collections', title: 'Collections', what: 'Money received in a period, who collected it, and how long it took to reach the office.' },
-  { to: '/reports/products', title: 'Product sales', what: 'What sold, in quantity and value, with an indicative margin.' },
+  { to: '/reports/products', title: 'Product sales', what: 'What sold, in quantity and value.' },
   { to: '/reports/stock', title: 'Stock', what: 'On hand, reserved and available, with stock value at cost.' },
+  {
+    to: '/reports/profitability',
+    title: 'Profitability',
+    what: 'What each item and each group earned, by item, product group or master group. Cost is the average of what was actually paid.',
+    adminOnly: true,
+  },
 ]
 
 export default function Reports() {
@@ -20,7 +27,7 @@ export default function Reports() {
       </div>
 
       <div className="report-cards">
-        {REPORTS.map((r) => (
+        {REPORTS.filter((r) => !r.adminOnly || user?.role === 'ADMIN').map((r) => (
           <Link className="tile" to={r.to} key={r.to}>
             <h3>{r.title}</h3>
             <p>{r.what}</p>

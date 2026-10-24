@@ -32,6 +32,7 @@ import SalesRegister from './screens/reports/SalesRegister'
 import Collections from './screens/reports/Collections'
 import ProductSales from './screens/reports/ProductSales'
 import StockReport from './screens/reports/StockReport'
+import Profitability from './screens/reports/Profitability'
 import { Banner, Loading } from './components/ui'
 import { supabase } from './lib/supabase'
 
@@ -142,6 +143,12 @@ function Gate() {
         <Route path="reports/collections" element={<Collections />} />
         <Route path="reports/products" element={<ProductSales />} />
         <Route path="reports/stock" element={<StockReport />} />
+        {/* Cost and margin are Admin only. The database refuses anyone else
+            as well, so this redirect is politeness rather than the guard. */}
+        <Route
+          path="reports/profitability"
+          element={user?.role === 'ADMIN' ? <Profitability /> : <Navigate to="/reports" replace />}
+        />
         <Route path="products" element={<Products />} />
         <Route
           path="import"
