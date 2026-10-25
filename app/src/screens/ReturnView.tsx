@@ -61,7 +61,7 @@ interface LineRow {
   rate: number
   amount: number
   restock: boolean
-  product: { code: string; name: string; base_uom: string } | null
+  product: { code: string; name: string; base_uom: string; pack_uom: string | null } | null
 }
 
 interface AllocRow {
@@ -97,7 +97,7 @@ export default function ReturnView() {
       supabase
         .from('sales_return_line')
         .select('id, line_no, qty, qty_base, uom, rate, amount, restock,' +
-                ' product:product_id (code, name, base_uom)')
+                ' product:product_id (code, name, base_uom, pack_uom)')
         .eq('return_id', id)
         .order('line_no'),
       supabase
@@ -373,7 +373,24 @@ export default function ReturnView() {
             cells: [
               l.line_no,
               l.product?.name ?? '',
-              <>{fmtQty(l.qty)} {l.product?.base_uom}</>,
+              // `qty` is in the LINE's own unit — 4 when four cartons came
+              // back — so it has to carry that unit and not the base one. It
+              // printed "4 PCS" against a return of 240 pieces, which is the
+              // same mistake as pricing a carton at the piece rate, told the
+              // other way round. The pieces go underneath, because the credit
+              // was worked out from them.
+              <>
+                {fmtQty(l.qty)}{' '}
+                {l.uom === 'PACK' ? (l.product?.pack_uom ?? 'PACK') : l.product?.base_uom}
+                {l.uom === 'PACK' && (
+                  <>
+                    <br />
+                    <span className="small muted">
+                      {fmtQty(l.qty_base)} {l.product?.base_uom}
+                    </span>
+                  </>
+                )}
+              </>,
               fmtMoney(l.rate),
               l.restock ? 'Yes' : 'Written off',
               fmtMoney(l.amount),
