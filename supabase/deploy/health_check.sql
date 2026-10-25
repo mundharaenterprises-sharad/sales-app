@@ -131,6 +131,13 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  -- 046 replaces a function without changing its signature, so its signature
+  -- is the text: the replacement is posted before the original is cancelled,
+  -- and the correction-specific refusal that goes with it.
+  ('046', 'a correction only needs back what it changes',
+                                 exists (select 1 from pg_proc
+                                          where proname = 'revise_purchase'
+                                            and prosrc like '%changes an item whose goods have already gone out%')),
   ('045', 'the register can be filtered by bill number',
                                  exists (select 1 from information_schema.columns
                                           where table_schema = 'public'

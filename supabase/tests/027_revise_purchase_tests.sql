@@ -208,13 +208,19 @@ begin
 end $$;
 
 -- -----------------------------------------------------------------------------
--- Once the goods have gone, it is too late
+-- Reducing a line whose goods have gone is still refused
 -- -----------------------------------------------------------------------------
+-- Note what is NOT asserted here any more. Before 046 this block sold P1 down
+-- and then expected ANY correction to be refused, because cancelling demanded
+-- the whole document back. That is no longer true and should not be: a line
+-- left at the same quantity cancels and re-enters exactly, so it needs nothing
+-- on the shelf. What still has to be refused is taking quantity AWAY that has
+-- already been sold, which is what this now tests.
 
 do $$
 declare v_id uuid; v_detail text;
 begin
-  -- Sell nearly all of it, so the purchase can no longer be taken back.
+  -- Sell nearly all of P1: 480 came in on this document, 10 will be left.
   perform public.create_sales_invoice(
     current_date,
     jsonb_build_array(jsonb_build_object(
@@ -224,18 +230,23 @@ begin
   select id into v_id from public.purchase where status = 'ACTIVE'
    order by created_at desc limit 1;
 
+  -- Halving P1 from 8 cartons to 4 means handing back 240 pieces, and there
+  -- are 10.
   begin
     perform public.revise_purchase(
       p_purchase_id => v_id,
-      p_lines       => jsonb_build_array(jsonb_build_object(
-        'product_id', pg_temp.prod('P1'), 'uom', 'PACK', 'qty', 8, 'rate', 1800)));
-    raise exception 'FAIL  a purchase was corrected after its goods had gone out';
+      p_lines       => jsonb_build_array(
+        jsonb_build_object('product_id', pg_temp.prod('P1'), 'uom', 'PACK',
+                           'qty', 4, 'rate', 1900),
+        jsonb_build_object('product_id', pg_temp.prod('P2'), 'uom', 'PACK',
+                           'qty', 5, 'rate', 1200)));
+    raise exception 'FAIL  a sold-through quantity was reduced on a purchase';
   exception when sqlstate 'SA001' then
     get stacked diagnostics v_detail = PG_EXCEPTION_DETAIL;
     if v_detail is null or v_detail = '' then
       raise exception 'FAIL  the refusal did not say which product was short';
     end if;
-    perform pg_temp.pass('correcting is refused once the goods have been sold');
+    perform pg_temp.pass('reducing a quantity that has been sold is refused');
     perform pg_temp.pass('and the refusal names the product and the quantities');
   end;
 end $$;
@@ -254,6 +265,28 @@ begin
   perform pg_temp.pass('a refused correction leaves the purchase exactly as it was');
 end $$;
 
+-- The same document, corrected in a way that takes nothing back, goes through.
+-- This is the pair that defines the rule, so the two sit together.
+do $$
+declare v_id uuid;
+begin
+  select id into v_id from public.purchase where status = 'ACTIVE'
+   order by created_at desc limit 1;
+
+  perform public.revise_purchase(
+    p_purchase_id => v_id,
+    p_lines       => jsonb_build_array(
+      jsonb_build_object('product_id', pg_temp.prod('P1'), 'uom', 'PACK',
+                         'qty', 8, 'rate', 1875),
+      jsonb_build_object('product_id', pg_temp.prod('P2'), 'uom', 'PACK',
+                         'qty', 5, 'rate', 1200)));
+
+  perform pg_temp.eq(pg_temp.on_hand('P1'), 10::numeric,
+    'stock after correcting a rate on a sold-through line');
+  perform pg_temp.pass('but correcting its RATE is fine — nothing is taken back');
+end $$;
+
+
 -- -----------------------------------------------------------------------------
 -- The details can still be fixed, which is the point of having two ways
 -- -----------------------------------------------------------------------------
@@ -271,7 +304,7 @@ begin
   perform pg_temp.eq(v.supplier_bill_no, 'PD/1001-B', 'the corrected bill number');
   perform pg_temp.eq(v.supplier_bill_date, current_date - 3, 'the corrected bill date');
   perform pg_temp.eq(v.remarks, 'Bill number corrected from the file copy', 'the remark');
-  perform pg_temp.eq(v.net_total, 20190::numeric, 'the total, which must not move');
+  perform pg_temp.eq(v.net_total, 21000::numeric, 'the total, which must not move');
   perform pg_temp.eq(pg_temp.on_hand('P1'), 10::numeric, 'stock, which must not move');
   perform pg_temp.pass('details can be fixed long after the goods have gone');
 end $$;
@@ -356,4 +389,162 @@ begin
   set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
 end $$;
 
-\echo '  18 of 18 passed.'
+-- =============================================================================
+-- Changing one line when ANOTHER line's goods have gone (migration 046)
+-- =============================================================================
+-- PUR-000015 in real life: eleven lines, nearly all still in stock, one item
+-- wrongly entered — refused because a DIFFERENT line was fourteen dozen short.
+-- A line nobody was changing, whose cancellation and re-entry cancel out
+-- exactly, blocked the whole document.
+--
+-- The order of the two halves is the fix, so the test is about what is on the
+-- shelf at the moment each half runs. Committed, because both documents are
+-- checked by the deferred totals trigger at COMMIT.
+
+begin;
+
+do $$ begin perform public.post_purchase(
+  p_supplier_id      => pg_temp.sup('S1'),
+  p_purchase_date    => current_date - 2,
+  p_lines            => jsonb_build_array(
+    jsonb_build_object('product_id', pg_temp.prod('P1'), 'uom', 'PACK', 'qty', 4, 'rate', 1900),
+    jsonb_build_object('product_id', pg_temp.prod('P2'), 'uom', 'PACK', 'qty', 4, 'rate', 1200)),
+  p_supplier_bill_no => 'NET/1'); end $$;
+
+commit;
+
+-- Sell almost all of P2 — the line that will NOT be touched. Before 046 this
+-- alone made the whole purchase uncorrectable.
+do $$
+declare v_have numeric;
+begin
+  v_have := pg_temp.on_hand('P2');
+  perform public.create_sales_invoice(
+    current_date,
+    jsonb_build_array(jsonb_build_object(
+      'product_id', pg_temp.prod('P2'), 'uom', 'BASE', 'qty', v_have - 5, 'rate', 60)),
+    null, pg_temp.party());
+
+  perform pg_temp.eq(pg_temp.on_hand('P2'), 5::numeric, 'what is left of the untouched item');
+  perform pg_temp.pass('the untouched line has 5 left of the 160 it brought in');
+end $$;
+
+-- Now correct the OTHER line: P1's rate was keyed wrong. P2 is unchanged.
+begin;
+
+do $$
+declare v_old uuid;
+begin
+  select id into v_old from public.purchase
+   where supplier_bill_no = 'NET/1' and status = 'ACTIVE';
+
+  perform public.revise_purchase(
+    p_purchase_id => v_old,
+    p_lines       => jsonb_build_array(
+      jsonb_build_object('product_id', pg_temp.prod('P1'), 'uom', 'PACK', 'qty', 4, 'rate', 1850),
+      jsonb_build_object('product_id', pg_temp.prod('P2'), 'uom', 'PACK', 'qty', 4, 'rate', 1200)),
+    p_remarks     => 'Rate corrected; the other line untouched');
+end $$;
+
+commit;
+
+do $$
+declare v public.purchase;
+begin
+  select * into v from public.purchase order by created_at desc limit 1;
+  perform pg_temp.eq(v.net_total, 12200::numeric, 'the corrected total');
+  perform pg_temp.pass('a line can be corrected though another line''s goods are gone');
+
+  -- The untouched item must come out exactly where it went in. If the two
+  -- halves did not cancel precisely, this is where it shows.
+  perform pg_temp.eq(pg_temp.on_hand('P2'), 5::numeric,
+    'the untouched item after correcting');
+  perform pg_temp.pass('and the untouched item''s stock did not move at all');
+
+  -- Only the RATE changed on this line, so its stock must come out exactly
+  -- where it went in — one lot, not two, and not one less either.
+  perform pg_temp.eq(pg_temp.on_hand('P1'), 250::numeric, 'the corrected item');
+  perform pg_temp.pass('while the corrected item is back at one lot, not two');
+end $$;
+
+-- The cost the goods went in at followed the corrected rate.
+--
+-- Asserted on the ledger row rather than on the running average, which also
+-- carries whatever was on the shelf beforehand and is a different question.
+-- What 046 has to get right is that the stock from THIS document is costed at
+-- the rate the document now says.
+do $$
+declare v_rate numeric; v_pur uuid;
+begin
+  select id into v_pur from public.purchase order by created_at desc limit 1;
+
+  select sl.rate into v_rate
+    from public.stock_ledger sl
+    join public.purchase_line pl on pl.id = sl.doc_line_id
+   where sl.doc_type = 'PURCHASE'
+     and sl.doc_id = v_pur
+     and pl.product_id = pg_temp.prod('P1');
+
+  perform pg_temp.eq(v_rate, round(1850::numeric / 60, 4), 'the cost it went in at');
+  perform pg_temp.pass('and the goods are costed at the corrected rate, not the original');
+
+  -- The cancelled document's own rows are out of the costing entirely (043),
+  -- so the original rate cannot go on influencing the average.
+  perform pg_temp.eq(
+    (select count(*) from app.v_ledger_marked m
+      join public.purchase p on p.id = m.doc_id
+     where p.status = 'CANCELLED' and m.doc_type = 'PURCHASE'),
+    0::bigint,
+    'cancelled purchase movements still inside the costing');
+  perform pg_temp.pass('and the cancelled original is out of the costing altogether');
+end $$;
+
+-- =============================================================================
+-- But the line being CHANGED still has to be there
+-- =============================================================================
+-- This is the half that must not be lost: the point of the order change was to
+-- stop unrelated lines blocking a correction, not to let goods be un-bought
+-- after they have been sold.
+
+do $$
+declare v_id uuid; v_detail text;
+begin
+  select id into v_id from public.purchase where status = 'ACTIVE'
+   order by created_at desc limit 1;
+
+  -- P2 has 5 left of the 160 this document brought in. Taking that line off
+  -- the document means putting 160 back, and it is not there.
+  begin
+    perform public.revise_purchase(
+      p_purchase_id => v_id,
+      p_lines       => jsonb_build_array(
+        jsonb_build_object('product_id', pg_temp.prod('P1'), 'uom', 'PACK',
+                           'qty', 4, 'rate', 1850)));
+    raise exception 'FAIL  a sold-through line was removed from a purchase';
+  exception when sqlstate 'SA001' then
+    get stacked diagnostics v_detail = PG_EXCEPTION_DETAIL;
+    if v_detail is null or v_detail = '' or v_detail = '[]' then
+      raise exception 'FAIL  the refusal did not say which product was short';
+    end if;
+    perform pg_temp.pass('removing a line whose goods have gone is still refused');
+    perform pg_temp.pass('and the refusal still names the product');
+  end;
+end $$;
+
+-- And nothing was half-done by that attempt: no orphan replacement left
+-- behind, the original still active, stock untouched.
+do $$
+declare v public.purchase; n int;
+begin
+  select * into v from public.purchase where status = 'ACTIVE'
+   order by created_at desc limit 1;
+  perform pg_temp.eq(v.net_total, 12200::numeric, 'the purchase after a refused correction');
+  perform pg_temp.eq(pg_temp.on_hand('P2'), 5::numeric, 'stock after a refused correction');
+
+  select count(*) into n from public.purchase
+   where replaces_purchase_id = v.id;
+  perform pg_temp.eq(n, 0, 'replacements left behind by a refused correction');
+  perform pg_temp.pass('a refused correction leaves no half-written replacement');
+end $$;
+
+\echo '  28 of 28 passed.'
