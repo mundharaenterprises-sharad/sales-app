@@ -158,6 +158,11 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/027_revise_purchase_tests.sql" 2>&1 | strip
 
 echo
+echo "==> Restating an opening cost"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/028_restate_opening_cost_tests.sql" 2>&1 | strip
+
+echo
 echo "==> Safe update tests"
 # Reads what is installed rather than exercising it, so it runs against the
 # database the discount suite just built.

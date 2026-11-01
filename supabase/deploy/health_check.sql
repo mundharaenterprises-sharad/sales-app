@@ -131,6 +131,21 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('047', 'an opening cost can be restated',
+                                 to_regprocedure('public.restate_opening_cost(uuid,numeric,text)') is not null
+                             -- The costing and the ledger screen both read the
+                             -- product's opening cost rather than the frozen
+                             -- rate on the OPENING row.
+                             and exists (select 1 from pg_proc p
+                                          join pg_namespace n on n.oid = p.pronamespace
+                                         where n.nspname = 'app'
+                                           and p.proname = 'product_guard'
+                                           and p.prosrc like '%app.restating_opening_cost%')
+                             and (select count(*) from pg_views
+                                   where (schemaname, viewname) in
+                                           (('app', 'v_ledger_marked'),
+                                            ('public', 'v_stock_ledger'))
+                                     and definition like '%opening_rate%') = 2),
   -- 046 replaces a function without changing its signature, so its signature
   -- is the text: the replacement is posted before the original is cancelled,
   -- and the correction-specific refusal that goes with it.
