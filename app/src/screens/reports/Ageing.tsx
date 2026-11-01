@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase, friendlyMessage } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
+import { fetchAll } from '../../lib/fetchall'
 import { fmtMoney } from '../../lib/format'
 import { Report } from '../../components/Report'
 import type { ReportColumn } from '../../components/Report'
@@ -94,23 +95,46 @@ export default function AgeingReport() {
   const [routes, setRoutes] = useState<RouteRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Paged, because one of these can outgrow the response cap. There is a row
+  // per party per master group in the finer view — 340 customers across three
+  // groups is already past a thousand — and a truncated ageing report does not
+  // look broken, it just leaves customers off the chase list and understates
+  // what is owed. See lib/fetchall.ts and bug #31.
+  //
+  // Every order() carries a unique tiebreaker after the amount. Ageing totals
+  // tie constantly (two shops owing the same round figure, and every zero),
+  // and paging an order that is not total can hand the same row back twice and
+  // another not at all.
   const load = useCallback(async () => {
     setError(null)
     const [p, r, pm] = await Promise.all([
-      supabase.from('v_ageing_by_party').select('*').order('total_outstanding', { ascending: false }),
-      supabase.from('v_ageing_by_route').select('*').order('total_outstanding', { ascending: false }),
-      supabase.from('v_ageing_by_party_master').select('*')
-        .order('total_outstanding', { ascending: false }),
+      fetchAll<PartyRow>(() =>
+        supabase.from('v_ageing_by_party').select('*', { count: 'exact' })
+          .order('total_outstanding', { ascending: false })
+          .order('party_code')),
+      fetchAll<RouteRow>(() =>
+        supabase.from('v_ageing_by_route').select('*', { count: 'exact' })
+          .order('total_outstanding', { ascending: false })
+          .order('route_name')),
+      fetchAll<PartyMasterRow>(() =>
+        supabase.from('v_ageing_by_party_master').select('*', { count: 'exact' })
+          .order('total_outstanding', { ascending: false })
+          .order('party_code')
+          .order('master_code')),
     ])
-    if (p.error || r.error) {
-      setError(friendlyMessage(p.error ?? r.error))
+    // The third one's error used to be ignored, which meant the split-by-group
+    // view could come up short with nothing anywhere saying why. Same mistake
+    // the sales register made with its line query.
+    if (p.error || r.error || pm.error) {
+      setError(p.error ?? r.error ?? pm.error)
       setParties([])
       setRoutes([])
+      setPmRows([])
       return
     }
-    setParties((p.data ?? []) as PartyRow[])
-    setRoutes((r.data ?? []) as RouteRow[])
-    setPmRows((pm.data ?? []) as PartyMasterRow[])
+    setParties(p.data)
+    setRoutes(r.data)
+    setPmRows(pm.data)
   }, [])
 
   useEffect(() => {

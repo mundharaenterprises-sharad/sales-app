@@ -34,10 +34,23 @@ import { useUrlState } from '../../lib/urlstate'
  *   cannot be attributed to one product honestly.
  */
 
-interface Line {
-  kind: string
-  doc_no: string
-  doc_date: string
+/**
+ * One row per product, already added up by the database.
+ *
+ * It used to be one row per BILL LINE, fetched in a single request and summed
+ * here. PostgREST caps a response at around a thousand rows and reports
+ * nothing, so a busy month was totalled from a slice of itself — and because
+ * truncation takes earnings and cost away together, the margin PERCENTAGE
+ * stayed right while every rupee figure came out short. Parle read a correct
+ * 5.9% beside a margin of 13,950 where the true figure was about 74,000.
+ *
+ * So the grouping moved into `profit_summary` (migration 048): about eighty
+ * rows instead of thousands, nowhere near any cap, and nothing to page. The
+ * group and master-group views are roll-ups of these rows, which is why the
+ * grouping columns have to come through with them. `profit_lines` is still
+ * there as the detail — do not call it from here.
+ */
+interface ProductTotals {
   product_id: string
   product_code: string
   product_name: string
@@ -88,7 +101,7 @@ function pct(margin: number, sales: number): string {
 export default function Profitability() {
   const { from, to, setFrom, setTo, presets } = useDateRange('month')
 
-  const [lines, setLines] = useState<Line[] | null>(null)
+  const [sums, setSums] = useState<ProductTotals[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // In the address, so opening something and pressing Back comes back to the
@@ -99,17 +112,20 @@ export default function Profitability() {
 
   const load = useCallback(async () => {
     setError(null)
-    setLines(null)
-    const { data, error } = await supabase.rpc('profit_lines', {
+    setSums(null)
+    // profit_summary, not profit_lines: one row per product. See the comment
+    // on ProductTotals above — asking for the lines silently truncated the
+    // totals at the response cap.
+    const { data, error } = await supabase.rpc('profit_summary', {
       p_from: from || null,
       p_to: to || null,
     })
     if (error) {
       setError(friendlyMessage(error))
-      setLines([])
+      setSums([])
       return
     }
-    setLines((data ?? []) as Line[])
+    setSums((data ?? []) as ProductTotals[])
   }, [from, to])
 
   useEffect(() => {
@@ -117,31 +133,31 @@ export default function Profitability() {
   }, [load])
 
   const masters = useMemo(
-    () => (lines ? Array.from(new Set(lines.map((l) => l.master_name))).sort() : []),
-    [lines],
+    () => (sums ? Array.from(new Set(sums.map((l) => l.master_name))).sort() : []),
+    [sums],
   )
 
   const groups = useMemo(
     () =>
-      lines
+      sums
         ? Array.from(
             new Set(
-              lines
+              sums
                 .filter((l) => !master || l.master_name === master)
                 .map((l) => l.group_name),
             ),
           ).sort()
         : [],
-    [lines, master],
+    [sums, master],
   )
 
   const view = (by === 'group' || by === 'master' ? by : 'item') as By
 
   const rows = useMemo(() => {
-    if (!lines) return null
+    if (!sums) return null
     const m = new Map<string, Row>()
 
-    for (const l of lines) {
+    for (const l of sums) {
       if (master && l.master_name !== master) continue
       if (group && l.group_name !== group) continue
 
@@ -178,7 +194,7 @@ export default function Profitability() {
     // Worst first would be a stranger default; the biggest earner first is
     // what somebody opens this to see.
     return [...m.values()].sort((a, b) => b.margin - a.margin)
-  }, [lines, view, master, group])
+  }, [sums, view, master, group])
 
   const totalSales = (rows ?? []).reduce((s, r) => s + r.sales, 0)
   const totalCost = (rows ?? []).reduce((s, r) => s + r.cost, 0)

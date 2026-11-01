@@ -131,6 +131,8 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('048', 'the profit report adds up every line',
+                                 to_regprocedure('public.profit_summary(date,date)') is not null),
   ('047', 'an opening cost can be restated',
                                  to_regprocedure('public.restate_opening_cost(uuid,numeric,text)') is not null
                              -- The costing and the ledger screen both read the
