@@ -251,7 +251,13 @@ export default function Orders() {
             p_lines: lines,
             p_order_id: o.order_id,
             p_party_id: null,
-            p_bill_discount_amount: 0,
+            // Both null means "nothing said", which makes the bill inherit
+            // the order's own bill-wide discount (migration 049). These used
+            // to be a hardcoded 0 and null — an explicit "no discount" — so
+            // every order billed from this screen lost the discount the rep
+            // agreed on the whole order, while its line discounts carried
+            // through and made the bill look right.
+            p_bill_discount_amount: null,
             p_bill_discount_pct: null,
             p_remarks: null,
           })

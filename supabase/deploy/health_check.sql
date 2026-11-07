@@ -131,6 +131,23 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  -- 049 replaces two functions without changing either signature, so its
+  -- signature is the text of one plus the DEFAULT of the other: the engine
+  -- resolves a percentage of its own, and saying nothing is now null rather
+  -- than zero in both.
+  ('049', 'a bill keeps its order''s bill-wide discount',
+                                 exists (select 1 from pg_proc p
+                                          join pg_namespace n on n.oid = p.pronamespace
+                                         where n.nspname = 'app'
+                                           and p.proname = 'create_sales_invoice_core'
+                                           and p.prosrc like '%v_bill_pct%')
+                             and (select count(*) from pg_proc p
+                                   join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname in ('app', 'public')
+                                    and p.proname in ('create_sales_invoice',
+                                                      'create_sales_invoice_core')
+                                    and pg_get_function_arguments(p.oid)
+                                        like '%p_bill_discount_amount numeric DEFAULT NULL%') = 2),
   ('048', 'the profit report adds up every line',
                                  to_regprocedure('public.profit_summary(date,date)') is not null),
   ('047', 'an opening cost can be restated',

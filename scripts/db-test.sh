@@ -168,6 +168,11 @@ rebuild
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/029_profit_summary_tests.sql" 2>&1 | strip
 
 echo
+echo "==> A bill keeps its order's discount"
+rebuild
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/supabase/tests/030_bill_discount_from_order_tests.sql" 2>&1 | strip
+
+echo
 echo "==> Safe update tests"
 # Reads what is installed rather than exercising it, so it runs against the
 # database the discount suite just built.

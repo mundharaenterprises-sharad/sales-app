@@ -663,6 +663,13 @@ export default function NewInvoice() {
           p_lines: payload,
           p_order_id: orderId,
           p_party_id: orderId ? null : party.party_id,
+          // The 0 here is deliberate and must stay a 0, not become a null.
+          // This screen always sends what is in its own box, and an empty box
+          // means no discount — it has already been pre-filled from the order
+          // above, so clearing it is the office saying "not on this bill".
+          // Both arguments null would instead mean "nothing said" and make the
+          // engine put the order's discount back (migration 049), which would
+          // leave no way to remove one.
           p_bill_discount_amount: discMode === 'AMOUNT' ? num(billDisc, 0) || 0 : 0,
           p_bill_discount_pct: discMode === 'PCT' ? num(billDisc, 0) || null : null,
           p_remarks: remarks.trim() || null,
