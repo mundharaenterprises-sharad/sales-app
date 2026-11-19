@@ -131,6 +131,12 @@ select * from (values
                              and to_regclass('public.v_stock_ledger') is not null),
   ('034', 'sales register at line level',
                                  to_regclass('public.v_sales_register_lines') is not null),
+  ('050', 'stock as on a date, and the bill number on the ledger',
+                                 to_regprocedure('public.stock_as_on(date)') is not null
+                             and (select count(*) from information_schema.columns
+                                   where table_schema = 'public'
+                                     and table_name = 'v_stock_ledger'
+                                     and column_name in ('doc_no', 'ref_doc_no', 'ref_id')) = 3),
   -- 049 replaces two functions without changing either signature, so its
   -- signature is the text of one plus the DEFAULT of the other: the engine
   -- resolves a percentage of its own, and saying nothing is now null rather

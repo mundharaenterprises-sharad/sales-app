@@ -9,6 +9,7 @@ import type { NewParty } from '../components/NewPartySheet'
 import { Picker } from '../components/Picker'
 import { Check, num } from '../components/FormSheet'
 import { DateInput } from '../components/DateInput'
+import { ShopHistory } from '../components/ShopHistory'
 import { rate4 } from '../lib/precision'
 
 /**
@@ -139,6 +140,10 @@ export default function NewInvoice() {
   const [parties, setParties] = useState<PartyRow[] | null>(null)
   const [stock, setStock] = useState<StockRow[] | null>(null)
   const [party, setParty] = useState<PartyRow | null>(null)
+  // Reading the shop's past bills without leaving this one. A sheet, not a
+  // page: the form's state lives here, so opening and closing it cannot lose
+  // a half-typed bill. See components/ShopHistory.tsx.
+  const [showHistory, setShowHistory] = useState(false)
   const [lines, setLines] = useState<Line[]>([])
 
   const [invoiceDate, setInvoiceDate] = useState(today())
@@ -791,6 +796,18 @@ export default function NewInvoice() {
               <div className="hint">
                 {party.party_code} · {party.route_name}
                 {party.balance != null && <> · owes {fmtMoney(party.balance)}</>}
+                {' · '}
+                <button
+                  type="button"
+                  className="linkish"
+                  // Not in the tab order: this is a thing you reach for when
+                  // you want it, and tabbing through it on the way to the
+                  // first item would be in the way every single time.
+                  tabIndex={-1}
+                  onClick={() => setShowHistory(true)}
+                >
+                  Past bills &amp; rates
+                </button>
               </div>
             )}
           </div>
@@ -1108,6 +1125,14 @@ export default function NewInvoice() {
               </div>
             </>
           )}
+        />
+      )}
+
+      {showHistory && party && (
+        <ShopHistory
+          partyId={party.party_id}
+          partyName={party.party_name}
+          onClose={() => setShowHistory(false)}
         />
       )}
 

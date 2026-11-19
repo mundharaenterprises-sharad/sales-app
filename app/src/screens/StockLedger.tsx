@@ -33,6 +33,9 @@ interface Row {
   movement_date: string
   doc_type: string
   doc_id: string | null
+  doc_no: string | null
+  ref_doc_no: string | null
+  ref_id: string | null
   qty_in: number
   qty_out: number
   rate: number
@@ -73,9 +76,12 @@ const LABEL: Record<string, string> = {
   PURCHASE: 'Purchase',
   SALE: 'Sale',
   SALE_RETURN: 'Sales return',
-  PURCHASE_RETURN: 'Purchase return',
   ADJUSTMENT: 'Adjustment',
-  CANCELLATION: 'Cancellation',
+  // The three reversals. These were missing, so a cancelled sale showed up on
+  // screen as the raw column value, SALE_CANCEL.
+  SALE_CANCEL: 'Bill cancelled',
+  SALE_RETURN_CANCEL: 'Return cancelled',
+  PURCHASE_CANCEL: 'Purchase cancelled',
 }
 
 export default function StockLedger() {
@@ -190,6 +196,36 @@ export default function StockLedger() {
         const label = LABEL[r.doc_type] ?? r.doc_type
         const to = r.doc_id ? LINK_TO[r.doc_type]?.(r.doc_id) : undefined
         return to ? <Link to={to}>{label}</Link> : <>{label}</>
+      },
+    },
+    {
+      // The bill number, which is what he asked for: "eighty pieces went out"
+      // is not useful until you know which bill took them.
+      //
+      // A cancellation carries two numbers — its own, and the bill it undid —
+      // because doc_id on those rows points at the cancellation record and
+      // not at the sale. The bill is the one worth linking, so it is the link.
+      // Both go into `value` so the Excel download says the same thing the
+      // screen does.
+      header: 'Document',
+      value: (r) =>
+        r.ref_doc_no ? `${r.doc_no ?? ''} (of ${r.ref_doc_no})` : (r.doc_no ?? ''),
+      width: 18,
+      mobile: 'meta',
+      cell: (r) => {
+        if (r.doc_type === 'SALE_CANCEL' && r.ref_doc_no && r.ref_id) {
+          return (
+            <>
+              {r.doc_no ?? '—'}{' '}
+              <span className="muted">
+                of <Link to={`/invoices/${r.ref_id}`}>{r.ref_doc_no}</Link>
+              </span>
+            </>
+          )
+        }
+        const to = r.doc_id ? LINK_TO[r.doc_type]?.(r.doc_id) : undefined
+        if (!r.doc_no) return <span className="muted">—</span>
+        return to ? <Link to={to}>{r.doc_no}</Link> : <>{r.doc_no}</>
       },
     },
     { header: 'In', value: (r) => (Number(r.qty_in) > 0 ? Number(r.qty_in) : null),
